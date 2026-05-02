@@ -1,0 +1,85 @@
+send_command:
+  name: Send EWFS command
+  description: Trigger one logical command on a shutter or group (mapped to button entities).
+  fields:
+    entity_id:
+      name: Cover entity
+      description: The Warema EWFS cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    command:
+      name: Command name
+      description: One of open, close, stop, tilt_up, tilt_down.
+      required: true
+      selector:
+        select:
+          options:
+            - open
+            - close
+            - stop
+            - tilt_up
+            - tilt_down
+
+set_cover_position_and_tilt:
+  name: Set cover position and tilt
+  description: Move to a cover target first, then apply the tilt target.
+  fields:
+    entity_id:
+      name: Cover entity
+      description: The Warema EWFS cover or group entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    position:
+      name: Cover position
+      description: Target cover position in percent (0-100).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+
+set_cover_position_and_tilt_step:
+  name: Set cover position and tilt step
+  description: Move to a cover target first, then apply a discrete tilt step (0-6).
+  fields:
+    entity_id:
+      name: Cover entity
+      description: The Warema EWFS cover or group entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    position:
+      name: Cover position
+      description: Target cover position in percent (0-100).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    tilt_step:
+      name: Tilt step
+      description: Target tilt step (0-6, where 0=vertical and 6=horizontal).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 6
+          mode: slider
+          step: 1
+    tilt_position:
+      name: Tilt position
+      description: Target tilt position in percent (0-100, snapped to 7 steps).
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+

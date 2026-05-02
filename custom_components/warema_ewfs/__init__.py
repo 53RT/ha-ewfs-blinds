@@ -1,0 +1,2 @@
+"""Warema EWFS custom component."""
+
