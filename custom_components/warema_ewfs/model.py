@@ -25,10 +25,19 @@ def snap_to_tilt_step(tilt_position: int, step_count: int = 7) -> int:
     return clamp_percent((index / (step_count - 1)) * 100)
 
 
-def compute_tilt_duration(current_tilt: int, target_tilt: int, step_time_up: float, step_time_down: float) -> float:
+def compute_tilt_duration(
+    current_tilt: int,
+    target_tilt: int,
+    step_time_up: float,
+    step_time_down: float,
+    step_count: int = 7,
+) -> float:
     """Return seconds needed between discrete tilt positions."""
-    current_step = round((clamp_percent(current_tilt) / 100.0) * 6)
-    target_step = round((clamp_percent(target_tilt) / 100.0) * 6)
+    if step_count <= 1:
+        return 0.0
+
+    current_step = round((clamp_percent(current_tilt) / 100.0) * (step_count - 1))
+    target_step = round((clamp_percent(target_tilt) / 100.0) * (step_count - 1))
 
     if current_step == target_step:
         return 0.0
