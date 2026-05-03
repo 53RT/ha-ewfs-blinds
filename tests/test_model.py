@@ -6,6 +6,7 @@ from custom_components.warema_ewfs.model import (
     compute_tilt_duration,
     infer_tilt_after_cover_move,
     should_send_auto_stop,
+    tilt_percent_to_step,
     snap_to_tilt_step,
     tilt_step_to_percent,
 )
@@ -86,5 +87,15 @@ def test_tilt_step_to_percent_for_7_steps():
 def test_tilt_step_to_percent_clamps_out_of_range_steps():
     assert tilt_step_to_percent(-2) == 0
     assert tilt_step_to_percent(99) == 100
+
+
+def test_tilt_percent_to_step_for_7_steps():
+    assert tilt_percent_to_step(0) == 0
+    assert tilt_percent_to_step(17) == 1
+    assert tilt_percent_to_step(33) == 2
+    assert tilt_percent_to_step(50) == 3
+    assert tilt_percent_to_step(67) == 4
+    assert tilt_percent_to_step(83) == 5
+    assert tilt_percent_to_step(100) == 6
 
 

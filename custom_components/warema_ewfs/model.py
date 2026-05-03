@@ -62,3 +62,10 @@ def tilt_step_to_percent(step: int, step_count: int = 7) -> int:
     return clamp_percent((bounded / (step_count - 1)) * 100)
 
 
+def tilt_percent_to_step(tilt_percent: int, step_count: int = 7) -> int:
+    """Convert a tilt percent value to the nearest discrete step index."""
+    if step_count <= 1:
+        return 0
+    return round((clamp_percent(tilt_percent) / 100.0) * (step_count - 1))
+
+

@@ -52,9 +52,9 @@ from .const import (
 from .model import (
     clamp_percent,
     compute_cover_duration,
-    compute_tilt_duration,
     infer_tilt_after_cover_move,
     should_send_auto_stop,
+    tilt_percent_to_step,
     snap_to_tilt_step,
     tilt_step_to_percent,
 )
@@ -394,29 +394,25 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self.async_write_ha_state()
 
     async def _start_tilt_move(self, target: int) -> None:
-        self._refresh_estimates()
         target = snap_to_tilt_step(target, TILT_STEP_COUNT)
-        duration = compute_tilt_duration(
-            self._current_tilt_position,
-            target,
-            self._tilt_step_time_up,
-            self._tilt_step_time_down,
-        )
-        if duration <= 0:
+        start_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        target_step = tilt_percent_to_step(target, TILT_STEP_COUNT)
+        if start_step == target_step:
             return
 
-        direction = "tilt_up" if target > self._current_tilt_position else "tilt_down"
-        await self._send_command(direction)
+        direction = "tilt_up" if target_step > start_step else "tilt_down"
+        step_delay = self._tilt_step_time_up if direction == "tilt_up" else self._tilt_step_time_down
+        step_delta = abs(target_step - start_step)
+        step_sign = 1 if target_step > start_step else -1
 
-        self._tilt_direction = "opening" if direction == "tilt_up" else "closing"
-        self._tilt_started_at = time.monotonic()
-        self._tilt_duration = duration
-        self._tilt_start_pos = self._current_tilt_position
-        self._tilt_target_pos = target
-
-        self._schedule_tilt_stop(duration)
-        self._ensure_interval_listener()
-        self.async_write_ha_state()
+        for index in range(step_delta):
+            await self._send_command(direction)
+            current_step = start_step + ((index + 1) * step_sign)
+            self._current_tilt_position = tilt_step_to_percent(current_step, TILT_STEP_COUNT)
+            self._known_tilt_position = True
+            self.async_write_ha_state()
+            if index < step_delta - 1:
+                await asyncio.sleep(step_delay)
 
     async def _send_command(self, command: str) -> None:
         await self.hass.services.async_call(
@@ -458,8 +454,6 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._current_tilt_position = self._tilt_target_pos
         self._known_tilt_position = True
         self._stop_tilt_tracking()
-        if should_send_auto_stop(self._send_stop_after_move, is_tilt_move=True):
-            await self._send_command("stop")
         self.async_write_ha_state()
 
     def _refresh_estimates(self) -> None:

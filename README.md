@@ -55,12 +55,13 @@ Optional keys:
 Behavior note:
 - `send_stop_after_move` is applied only to normal cover movement (`open` / `close` / `set_position`).
 - Tilt movement completion never sends an automatic stop command.
+- Tilt is applied by repeating `tilt_up`/`tilt_down` commands per step (about 16 degrees per command).
 
 Combined move behavior:
 - The service `cover.set_cover_position_and_tilt` first moves to the target cover position.
 - After the move, tilt base orientation is inferred from move direction:
-  - upward move -> slats horizontal (`100%` tilt)
-  - downward move -> slats vertical (`0%` tilt)
+  - upward move → slats horizontal (`100%` tilt)
+  - downward move → slats vertical (`0%` tilt)
 - Then tilt is adjusted to the requested target.
 - You can also use `cover.set_cover_position_and_tilt_step` with discrete tilt steps (`0..6`).
 
@@ -147,6 +148,7 @@ data:
 
 `tilt_step` mapping for 7 steps:
 - `0, 1, 2, 3, 4, 5, 6` -> `0%, 17%, 33%, 50%, 67%, 83%, 100%`
+- Example: target around 45 degrees is typically `tilt_step: 3` (about 50%).
 
 ```yaml
 service: cover.set_cover_position_and_tilt_step
