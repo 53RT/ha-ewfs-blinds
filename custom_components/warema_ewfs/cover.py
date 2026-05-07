@@ -297,6 +297,12 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         self._refresh_estimates()
+        if self._move_direction == "opening":
+            self._current_tilt_position = 100
+            self._known_tilt_position = True
+        elif self._move_direction == "closing":
+            self._current_tilt_position = 0
+            self._known_tilt_position = True
         await self._send_command("stop")
         self._stop_cover_tracking()
         self.async_write_ha_state()
@@ -443,8 +449,15 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._unsub_tilt_timer = async_call_later(self.hass, duration, _on_tilt_timer)
 
     async def _finish_cover_move(self) -> None:
+        inferred_tilt = infer_tilt_after_cover_move(
+            current_position=self._move_start_pos,
+            target_position=self._move_target_pos,
+            current_tilt=self._current_tilt_position,
+        )
         self._current_cover_position = self._move_target_pos
         self._known_position = True
+        self._current_tilt_position = inferred_tilt
+        self._known_tilt_position = True
         self._stop_cover_tracking()
         if should_send_auto_stop(self._send_stop_after_move, is_tilt_move=False):
             await self._send_command("stop")
@@ -592,19 +605,30 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         await self._fanout("open_cover")
         self._current_cover_position = 100
         self._known_position = True
+        self._current_tilt_position = 100
+        self._known_tilt_position = True
         self.async_write_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         await self._fanout("close_cover")
         self._current_cover_position = 0
         self._known_position = True
+        self._current_tilt_position = 0
+        self._known_tilt_position = True
         self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target = clamp_percent(float(kwargs[ATTR_POSITION]))
+        inferred_tilt = infer_tilt_after_cover_move(
+            current_position=self._current_cover_position,
+            target_position=target,
+            current_tilt=self._current_tilt_position,
+        )
         await self._fanout("set_cover_position", {ATTR_POSITION: target})
         self._current_cover_position = target
         self._known_position = True
+        self._current_tilt_position = inferred_tilt
+        self._known_tilt_position = True
         self.async_write_ha_state()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:

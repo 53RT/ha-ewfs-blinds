@@ -35,7 +35,16 @@ set_cover_position_and_tilt:
           domain: cover
     position:
       name: Cover position
-      description: Target cover position in percent (0-100).
+      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open.
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    tilt_position:
+      name: Tilt position
+      description: Target tilt position in percent (0-100). 0=fully closed, 100=fully open.
       required: true
       selector:
         number:
@@ -56,7 +65,7 @@ set_cover_position_and_tilt_step:
           domain: cover
     position:
       name: Cover position
-      description: Target cover position in percent (0-100).
+      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open.
       required: true
       selector:
         number:
@@ -73,13 +82,3 @@ set_cover_position_and_tilt_step:
           max: 6
           mode: slider
           step: 1
-    tilt_position:
-      name: Tilt position
-      description: Target tilt position in percent (0-100, snapped to 7 steps).
-      required: true
-      selector:
-        number:
-          min: 0
-          max: 100
-          mode: slider
-
