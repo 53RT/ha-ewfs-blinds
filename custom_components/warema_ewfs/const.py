@@ -12,6 +12,7 @@ DEFAULT_SEND_STOP_AFTER_MOVE = True
 TILT_STEP_COUNT = 7
 
 CONF_IS_GROUP = "is_group"
+CONF_IS_NATIVE_GROUP = "is_native_group"
 CONF_GROUP_MEMBERS = "group_members"
 CONF_SHUTTER_ID = "shutter_id"
 

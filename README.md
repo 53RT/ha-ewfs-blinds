@@ -78,6 +78,19 @@ Group members are validated at runtime:
 - only `warema_ewfs` single-cover entities are accepted as valid members
 - non-Warema entities (or nested groups) are ignored and logged as warnings
 
+### Native Remote Group Shutter
+
+For native Warema remote groups (one shared set of group commands), use:
+- `is_native_group: true`
+- `group_members`: list of member `cover` entity IDs
+- the five group command buttons: `btn_open`, `btn_close`, `btn_stop`, `btn_tilt_up`, `btn_tilt_down`
+
+Behavior:
+- Cover movement supports only fully open (`100%`) and fully closed (`0%`).
+- Intermediate cover targets are not supported and will be snapped to full open/close.
+- Group travel time is derived from the longest member travel time (`travel_time_up` / `travel_time_down`).
+- Tilt is fully supported via repeated tilt commands.
+
 ## YAML Example
 
 ```yaml
@@ -123,6 +136,20 @@ cover:
 	group_members:
 	  - cover.kitchen
 	  - cover.living_room
+
+  - platform: warema_ewfs
+	name: Ground Floor Native Group
+	unique_id: warema_ground_floor_native
+	is_native_group: true
+	group_members:
+	  - cover.kitchen
+	  - cover.living_room
+
+	btn_open: button.ground_floor_open
+	btn_close: button.ground_floor_close
+	btn_stop: button.ground_floor_stop
+	btn_tilt_up: button.ground_floor_tilt_up
+	btn_tilt_down: button.ground_floor_tilt_down
 ```
 
 ## Config Flow (UI)
@@ -131,7 +158,8 @@ The current implementation is YAML-based.
 If/when a Config Flow is added, it should expose the same fields:
 
 - single shutter: five `btn_*` entities + timing values
-- group shutter: `is_group` and `group_members`
+- fan-out group shutter: `is_group` and `group_members`
+- native remote group shutter: `is_native_group`, `group_members`, and five group `btn_*` entities
 
 ## Service Example (Position + Tilt)
 

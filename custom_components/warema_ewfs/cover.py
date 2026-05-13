@@ -34,6 +34,7 @@ from .const import (
     CONF_BTN_TILT_UP,
     CONF_GROUP_MEMBERS,
     CONF_IS_GROUP,
+    CONF_IS_NATIVE_GROUP,
     CONF_SHUTTER_ID,
     CONF_SEND_STOP_AFTER_MOVE,
     CONF_TILT_STEP_TIME_DOWN,
@@ -62,6 +63,7 @@ from .model import (
 SERVICE_SEND_COMMAND = "send_command"
 SERVICE_SET_POSITION_AND_TILT = "set_cover_position_and_tilt"
 SERVICE_SET_POSITION_AND_TILT_STEP = "set_cover_position_and_tilt_step"
+SERVICE_SIMULATE_COMMAND = "simulate_command"
 ATTR_COMMAND = "command"
 ATTR_TILT_STEP = "tilt_step"
 
@@ -93,9 +95,35 @@ GROUP_SCHEMA = {
     vol.Required(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
 }
 
+NATIVE_GROUP_SCHEMA = {
+    vol.Required(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
+    vol.Required(CONF_BTN_OPEN): cv.entity_id,
+    vol.Required(CONF_BTN_CLOSE): cv.entity_id,
+    vol.Required(CONF_BTN_STOP): cv.entity_id,
+    vol.Required(CONF_BTN_TILT_UP): cv.entity_id,
+    vol.Required(CONF_BTN_TILT_DOWN): cv.entity_id,
+    vol.Optional(CONF_TRAVEL_TIME_UP, default=DEFAULT_TRAVEL_TIME_UP): vol.All(
+        vol.Coerce(float), vol.Range(min=0.1, max=600)
+    ),
+    vol.Optional(CONF_TRAVEL_TIME_DOWN, default=DEFAULT_TRAVEL_TIME_DOWN): vol.All(
+        vol.Coerce(float), vol.Range(min=0.1, max=600)
+    ),
+    vol.Optional(CONF_TILT_STEP_TIME_UP, default=DEFAULT_TILT_STEP_TIME_UP): vol.All(
+        vol.Coerce(float), vol.Range(min=0.01, max=60)
+    ),
+    vol.Optional(CONF_TILT_STEP_TIME_DOWN, default=DEFAULT_TILT_STEP_TIME_DOWN): vol.All(
+        vol.Coerce(float), vol.Range(min=0.01, max=60)
+    ),
+    vol.Optional(CONF_SEND_STOP_AFTER_MOVE, default=DEFAULT_SEND_STOP_AFTER_MOVE): cv.boolean,
+}
+
 
 def _validate_platform_config(config: dict[str, Any]) -> dict[str, Any]:
     """Validate either single-shutter or group config."""
+    if config[CONF_IS_GROUP] and config[CONF_IS_NATIVE_GROUP]:
+        raise vol.Invalid("Use either is_group or is_native_group, not both.")
+    if config[CONF_IS_NATIVE_GROUP]:
+        return vol.Schema(NATIVE_GROUP_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
     if config[CONF_IS_GROUP]:
         return vol.Schema(GROUP_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
     return vol.Schema(SINGLE_SHUTTER_SCHEMA, extra=vol.ALLOW_EXTRA)(config)
@@ -107,6 +135,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_UNIQUE_ID): cv.string,
         vol.Optional(CONF_SHUTTER_ID): cv.string,
         vol.Optional(CONF_IS_GROUP, default=False): cv.boolean,
+        vol.Optional(CONF_IS_NATIVE_GROUP, default=False): cv.boolean,
         vol.Optional(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
         vol.Optional(CONF_BTN_OPEN): cv.entity_id,
         vol.Optional(CONF_BTN_CLOSE): cv.entity_id,
@@ -123,6 +152,27 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 PLATFORM_SCHEMA = vol.All(PLATFORM_SCHEMA, _validate_platform_config)
 
 
+def _is_valid_warema_single_member(
+    hass: HomeAssistant,
+    entity_id: str,
+    registry: er.EntityRegistry,
+) -> bool:
+    """Return True if entity is a Warema EWFS single-cover entity."""
+    entry = registry.async_get(entity_id)
+    state = hass.states.get(entity_id)
+
+    if state is not None:
+        if state.attributes.get("is_group") is True:
+            return False
+        if state.attributes.get("integration") not in (None, DOMAIN):
+            return False
+
+    if entry is not None:
+        return entry.domain == "cover" and entry.platform == DOMAIN
+
+    return state is not None and state.attributes.get("integration") == DOMAIN
+
+
 async def async_setup_platform(
     hass: HomeAssistant,
     config: dict[str, Any],
@@ -130,8 +180,10 @@ async def async_setup_platform(
     discovery_info: dict[str, Any] | None = None,
 ) -> None:
     """Set up Warema EWFS cover entities from YAML configuration."""
-    entity: WaremaEWFSCover | WaremaEWFSGroupCover
-    if config[CONF_IS_GROUP]:
+    entity: WaremaEWFSCover | WaremaEWFSGroupCover | WaremaEWFSNativeGroupCover
+    if config[CONF_IS_NATIVE_GROUP]:
+        entity = WaremaEWFSNativeGroupCover(hass, config)
+    elif config[CONF_IS_GROUP]:
         entity = WaremaEWFSGroupCover(hass, config)
     else:
         entity = WaremaEWFSCover(hass, config)
@@ -161,6 +213,11 @@ async def async_setup_platform(
             ),
         },
         "async_set_cover_position_and_tilt_step",
+    )
+    platform.async_register_entity_service(
+        SERVICE_SIMULATE_COMMAND,
+        {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
+        "async_simulate_command",
     )
 
 
@@ -262,6 +319,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             "integration": DOMAIN,
             "shutter_id": self._shutter_id,
             "is_group": False,
+            "travel_time_up": self._travel_time_up,
+            "travel_time_down": self._travel_time_down,
+            "tilt_step_time_up": self._tilt_step_time_up,
+            "tilt_step_time_down": self._tilt_step_time_down,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -307,13 +368,27 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._stop_cover_tracking()
         self.async_write_ha_state()
 
+#    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+#        self._known_tilt_position = True
+#        await self._start_tilt_move(100)
+
+#    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+#        self._known_tilt_position = True
+#        await self._start_tilt_move(0)
+
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._known_tilt_position = True
-        await self._start_tilt_move(100)
+        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        next_step = min(current_step + 1, TILT_STEP_COUNT - 1)
+        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        await self._start_tilt_move(target)
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         self._known_tilt_position = True
-        await self._start_tilt_move(0)
+        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        next_step = max(current_step - 1, 0)
+        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        await self._start_tilt_move(target)
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         requested = clamp_percent(float(kwargs[ATTR_TILT_POSITION]))
@@ -634,17 +709,36 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._fanout("stop_cover")
 
+#    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+#        await self._fanout("open_cover_tilt")
+#        self._current_tilt_position = 100
+#        self._known_tilt_position = True
+#        self.async_write_ha_state()
+#
+#    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+#        await self._fanout("close_cover_tilt")
+#        self._current_tilt_position = 0
+#        self._known_tilt_position = True
+#        self.async_write_ha_state()
+
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-        await self._fanout("open_cover_tilt")
-        self._current_tilt_position = 100
+        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        next_step = min(current_step + 1, TILT_STEP_COUNT - 1)
+        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        await self._fanout("set_cover_tilt_position", {ATTR_TILT_POSITION: target})
+        self._current_tilt_position = target
         self._known_tilt_position = True
         self.async_write_ha_state()
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-        await self._fanout("close_cover_tilt")
-        self._current_tilt_position = 0
+        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        next_step = max(current_step - 1, 0)
+        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        await self._fanout("set_cover_tilt_position", {ATTR_TILT_POSITION: target})
+        self._current_tilt_position = target
         self._known_tilt_position = True
         self.async_write_ha_state()
+
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         target = snap_to_tilt_step(clamp_percent(float(kwargs[ATTR_TILT_POSITION])), TILT_STEP_COUNT)
@@ -723,6 +817,71 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
             payload.update(extra)
         await self.hass.services.async_call("cover", service, payload, blocking=True)
 
+    async def async_simulate_command(self, command: str) -> None:
+        """Update position as if a command was received, without sending anything."""
+        if command == "open":
+            self._known_position = True
+            await self._simulate_cover_move(100)
+        elif command == "close":
+            self._known_position = True
+            await self._simulate_cover_move(0)
+        elif command == "stop":
+            self._refresh_estimates()
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            elif self._move_direction == "closing":
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self._stop_tilt_tracking()
+            self.async_write_ha_state()
+        elif command == "tilt_up":
+            self._known_tilt_position = True
+            await self._simulate_tilt_move(100)
+        elif command == "tilt_down":
+            self._known_tilt_position = True
+            await self._simulate_tilt_move(0)
+
+    async def _simulate_cover_move(self, target: int) -> None:
+        """Start position tracking toward target without sending a hardware command."""
+        self._refresh_estimates()
+        target = clamp_percent(target)
+        duration = compute_cover_duration(
+            self._current_cover_position,
+            target,
+            self._travel_time_up,
+            self._travel_time_down,
+        )
+        if duration <= 0:
+            return
+
+        direction = "open" if target > self._current_cover_position else "close"
+        self._move_direction = "opening" if direction == "open" else "closing"
+        self._move_started_at = time.monotonic()
+        self._move_duration = duration
+        self._move_start_pos = self._current_cover_position
+        self._move_target_pos = target
+
+        self._schedule_cover_stop(duration)
+        self._ensure_interval_listener()
+        self.async_write_ha_state()
+
+    async def _simulate_tilt_move(self, target: int) -> None:
+        """Start tilt tracking toward target without sending a hardware command."""
+        target = snap_to_tilt_step(target, TILT_STEP_COUNT)
+        start_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        target_step = tilt_percent_to_step(target, TILT_STEP_COUNT)
+        if start_step == target_step:
+            return
+
+        # For simulation, just move one step (matching the "next position" behavior)
+        step_sign = 1 if target_step > start_step else -1
+        next_step = start_step + step_sign
+        self._current_tilt_position = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        self._known_tilt_position = True
+        self.async_write_ha_state()
+
     def _revalidate_group_members(self, log_warning: bool = False) -> None:
         """Keep only valid Warema EWFS single-cover entities as group members."""
         registry = er.async_get(self.hass)
@@ -748,18 +907,178 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
 
     def _is_valid_member(self, entity_id: str, registry: er.EntityRegistry) -> bool:
         """Return True if entity is a Warema EWFS single-cover entity."""
-        entry = registry.async_get(entity_id)
-        state = self.hass.states.get(entity_id)
+        return _is_valid_warema_single_member(self.hass, entity_id, registry)
 
-        if state is not None:
-            if state.attributes.get("is_group") is True:
-                return False
-            if state.attributes.get("integration") not in (None, DOMAIN):
-                return False
 
-        if entry is not None:
-            return entry.domain == "cover" and entry.platform == DOMAIN
+class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
+    """Native remote group using dedicated group command buttons."""
 
-        return state is not None and state.attributes.get("integration") == DOMAIN
+    def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
+        super().__init__(hass, config)
+        self._configured_members: list[str] = list(config[CONF_GROUP_MEMBERS])
+        self._members: list[str] = []
+        self._invalid_members: list[str] = []
+
+    @property
+    def supported_features(self) -> CoverEntityFeature:
+        return (
+            CoverEntityFeature.OPEN
+            | CoverEntityFeature.CLOSE
+            | CoverEntityFeature.STOP
+            | CoverEntityFeature.OPEN_TILT
+            | CoverEntityFeature.CLOSE_TILT
+            | CoverEntityFeature.STOP_TILT
+            | CoverEntityFeature.SET_TILT_POSITION
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = dict(super().extra_state_attributes)
+        attrs.update(
+            {
+                "is_group": True,
+                "group_mode": "native_remote",
+                "group_members": self._configured_members,
+                "valid_group_members": self._members,
+                "invalid_group_members": self._invalid_members,
+                "supports_intermediate_cover_positions": False,
+            }
+        )
+        return attrs
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._refresh_group_timing(log_warning=True)
+        self.async_write_ha_state()
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        self._refresh_group_timing()
+        await super().async_open_cover(**kwargs)
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        self._refresh_group_timing()
+        await super().async_close_cover(**kwargs)
+
+    async def async_set_cover_position(self, **kwargs: Any) -> None:
+        requested = clamp_percent(float(kwargs[ATTR_POSITION]))
+        if requested not in (0, 100):
+            _LOGGER.warning(
+                "Native Warema group '%s' does not support intermediate cover position %s%%. Using %s%%.",
+                self.entity_id or self._attr_name,
+                requested,
+                100 if requested >= 50 else 0,
+            )
+
+        if requested >= 50:
+            await self.async_open_cover()
+        else:
+            await self.async_close_cover()
+
+    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+        self._refresh_group_timing()
+        await super().async_open_cover_tilt(**kwargs)
+
+    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+        self._refresh_group_timing()
+        await super().async_close_cover_tilt(**kwargs)
+
+    async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
+        self._refresh_group_timing()
+        await super().async_set_cover_tilt_position(**kwargs)
+
+    async def async_set_cover_position_and_tilt(self, position: float, tilt_position: float) -> None:
+        target_position = clamp_percent(position)
+        await self.async_set_cover_position(**{ATTR_POSITION: target_position})
+        await self.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: tilt_position})
+
+    async def async_set_cover_position_and_tilt_step(self, position: float, tilt_step: int) -> None:
+        target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
+        await self.async_set_cover_position_and_tilt(position=position, tilt_position=target_tilt)
+
+    async def _start_cover_move(self, target: int) -> None:
+        self._refresh_estimates()
+        target = clamp_percent(target)
+
+        if target == self._current_cover_position:
+            return
+
+        direction = "open" if target > self._current_cover_position else "close"
+        duration = self._travel_time_up if direction == "open" else self._travel_time_down
+
+        await self._send_command(direction)
+
+        self._move_direction = "opening" if direction == "open" else "closing"
+        self._move_started_at = time.monotonic()
+        self._move_duration = duration
+        self._move_start_pos = self._current_cover_position
+        self._move_target_pos = 100 if direction == "open" else 0
+
+        self._schedule_cover_stop(duration)
+        self._ensure_interval_listener()
+        self.async_write_ha_state()
+
+    def _refresh_group_timing(self, log_warning: bool = False) -> None:
+        self._revalidate_group_members(log_warning=log_warning)
+
+        max_up = None
+        max_down = None
+        max_tilt_up = None
+        max_tilt_down = None
+
+        for entity_id in self._members:
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                continue
+
+            attr_up = state.attributes.get("travel_time_up")
+            attr_down = state.attributes.get("travel_time_down")
+            attr_tilt_up = state.attributes.get("tilt_step_time_up")
+            attr_tilt_down = state.attributes.get("tilt_step_time_down")
+
+            if isinstance(attr_up, (int, float)):
+                max_up = max(max_up or 0.0, float(attr_up))
+            if isinstance(attr_down, (int, float)):
+                max_down = max(max_down or 0.0, float(attr_down))
+            if isinstance(attr_tilt_up, (int, float)):
+                max_tilt_up = max(max_tilt_up or 0.0, float(attr_tilt_up))
+            if isinstance(attr_tilt_down, (int, float)):
+                max_tilt_down = max(max_tilt_down or 0.0, float(attr_tilt_down))
+
+        if max_up is not None:
+            self._travel_time_up = max_up
+        if max_down is not None:
+            self._travel_time_down = max_down
+        if max_tilt_up is not None:
+            self._tilt_step_time_up = max_tilt_up
+        if max_tilt_down is not None:
+            self._tilt_step_time_down = max_tilt_down
+
+    def _revalidate_group_members(self, log_warning: bool = False) -> None:
+        registry = er.async_get(self.hass)
+        valid: list[str] = []
+        invalid: list[str] = []
+
+        for entity_id in self._configured_members:
+            if _is_valid_warema_single_member(self.hass, entity_id, registry):
+                valid.append(entity_id)
+            else:
+                invalid.append(entity_id)
+
+        warn_now = log_warning or invalid != self._invalid_members
+        self._members = valid
+        self._invalid_members = invalid
+
+        if warn_now and invalid:
+            _LOGGER.warning(
+                "Native Warema group '%s' ignores non-Warema members: %s",
+                self.entity_id or self._attr_name,
+                ", ".join(invalid),
+            )
+
+        if log_warning and not valid:
+            _LOGGER.warning(
+                "Native Warema group '%s' has no valid members for travel-time derivation.",
+                self.entity_id or self._attr_name,
+            )
 
 

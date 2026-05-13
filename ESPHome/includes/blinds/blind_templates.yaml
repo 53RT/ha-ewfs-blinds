@@ -1,0 +1,53 @@
+# /homeassistant/esphome/includes/blinds/blind_template.yaml
+# Parameters: blind_name, code_up, code_down, code_stop, code_long_up, code_long_down
+
+button:
+  - platform: template
+    name: "${blind_name} Up"
+    icon: mdi:arrow-up
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code: ${code_up}
+          repeat:
+            times: 20
+            wait_time: 5ms
+
+  - platform: template
+    name: "${blind_name} Down"
+    icon: mdi:arrow-down
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code: ${code_down}
+          repeat:
+            times: 20
+            wait_time: 5ms
+
+  - platform: template
+    name: "${blind_name} Stop"
+    icon: mdi:stop
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code: ${code_stop}
+          repeat:
+            times: 4
+            wait_time: 5ms
+
+  - platform: template
+    name: "${blind_name} Tilt Up"
+    icon: mdi:arrow-up
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code: ${code_up}
+          repeat:
+            times: 4
+            wait_time: 5ms
+
+  - platform: template
+    name: "${blind_name} Tilt Down"
+    icon: mdi:arrow-down
+    on_press:
+      - remote_transmitter.transmit_raw:
+          code: ${code_down}
+          repeat:
+            times: 4
+            wait_time: 5ms

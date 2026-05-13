@@ -35,7 +35,7 @@ set_cover_position_and_tilt:
           domain: cover
     position:
       name: Cover position
-      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open.
+      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open. Native remote groups snap to 0 or 100.
       required: true
       selector:
         number:
@@ -65,7 +65,7 @@ set_cover_position_and_tilt_step:
           domain: cover
     position:
       name: Cover position
-      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open.
+      description: Target cover position in percent (0-100). 0=fully closed, 100=fully open. Native remote groups snap to 0 or 100.
       required: true
       selector:
         number:
@@ -82,3 +82,28 @@ set_cover_position_and_tilt_step:
           max: 6
           mode: slider
           step: 1
+
+# services to update states without controlling the hardware
+simulate_command:
+  name: Simulate external command
+  description: Update cover position tracking as if a command was received from an external remote, without sending any hardware command.
+  fields:
+    entity_id:
+      name: Cover entity
+      description: The Warema EWFS cover entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    command:
+      name: Command
+      description: The command detected from the external remote.
+      required: true
+      selector:
+        select:
+          options:
+            - open
+            - close
+            - stop
+            - tilt_up
+            - tilt_down

@@ -1,0 +1,69 @@
+# --- blind_receiver_template.yaml ---
+#
+# This template defines three binary sensors for receiving RF commands (up/down/stop) for a blind.
+# It tracks the last received command, the count of repeated commands, and the time of the last command to help with state management in Home Assistant.
+
+binary_sensor:
+  - platform: remote_receiver
+    name: "${blind_name} RX Up"
+    id: rx_${blind_name}_up
+    internal: true
+    raw:
+      code: ${code_up}
+    filters:
+      - delayed_off: 100ms
+    on_press:
+      then:
+        - lambda: |-
+            id(rf_rx_last_millis) = millis();
+            if (id(rf_rx_shutter) != "${blind_name}" || id(rf_rx_command) != "up") {
+              // New command sequence
+              id(rf_rx_count) = 0;
+              id(rf_rx_shutter) = "${blind_name}";
+              id(rf_rx_command) = "up";
+            }
+            id(rf_rx_count) += 1;
+            id(rf_rx_active) = true;
+            id(rf_rx_last_millis) = millis();
+
+  - platform: remote_receiver
+    name: "${blind_name} RX Down"
+    id: rx_${blind_name}_down
+    internal: true
+    raw:
+      code: ${code_down}
+    filters:
+      - delayed_off: 100ms
+    on_press:
+      then:
+        - lambda: |-
+            id(rf_rx_last_millis) = millis();
+            if (id(rf_rx_shutter) != "${blind_name}" || id(rf_rx_command) != "down") {
+              id(rf_rx_count) = 0;
+              id(rf_rx_shutter) = "${blind_name}";
+              id(rf_rx_command) = "down";
+            }
+            id(rf_rx_count) += 1;
+            id(rf_rx_active) = true;
+            id(rf_rx_last_millis) = millis();
+
+  - platform: remote_receiver
+    name: "${blind_name} RX Stop"
+    id: rx_${blind_name}_stop
+    internal: true
+    raw:
+      code: ${code_stop}
+    filters:
+      - delayed_off: 100ms
+    on_press:
+      then:
+        - lambda: |-
+            id(rf_rx_last_millis) = millis();
+            if (id(rf_rx_shutter) != "${blind_name}" || id(rf_rx_command) != "stop") {
+              id(rf_rx_count) = 0;
+              id(rf_rx_shutter) = "${blind_name}";
+              id(rf_rx_command) = "stop";
+            }
+            id(rf_rx_count) += 1;
+            id(rf_rx_active) = true;
+            id(rf_rx_last_millis) = millis();
