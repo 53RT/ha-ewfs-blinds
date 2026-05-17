@@ -61,7 +61,6 @@ Optional keys:
 - `tilt_step_time_down` (seconds per tilt step toward 0%)
 - `send_stop_after_move` (default `true`, sends `btn_stop` when a normal up/down move reaches target)
 - `unique_id`
-- `shutter_id`
 
 Behavior note:
 - `send_stop_after_move` is applied only to normal cover movement (`open` / `close` / `set_position`).
@@ -109,7 +108,6 @@ cover:
   - platform: warema_ewfs
 	name: Kitchen
 	unique_id: warema_kitchen
-	shutter_id: kitchen
 
 	btn_open: button.kitchen_shutter_open
 	btn_close: button.kitchen_shutter_close
@@ -126,7 +124,6 @@ cover:
   - platform: warema_ewfs
 	name: Living Room
 	unique_id: warema_living_room
-	shutter_id: living_room
 
 	btn_open: button.living_room_shutter_open
 	btn_close: button.living_room_shutter_close

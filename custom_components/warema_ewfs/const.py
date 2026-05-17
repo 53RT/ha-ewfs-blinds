@@ -14,7 +14,6 @@ TILT_STEP_COUNT = 7
 CONF_IS_GROUP = "is_group"
 CONF_IS_NATIVE_GROUP = "is_native_group"
 CONF_GROUP_MEMBERS = "group_members"
-CONF_SHUTTER_ID = "shutter_id"
 
 CONF_TRAVEL_TIME_UP = "travel_time_up"
 CONF_TRAVEL_TIME_DOWN = "travel_time_down"

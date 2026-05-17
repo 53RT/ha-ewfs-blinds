@@ -37,7 +37,6 @@ from .const import (
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
-    CONF_SHUTTER_ID,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
@@ -135,7 +134,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_UNIQUE_ID): cv.string,
-        vol.Optional(CONF_SHUTTER_ID): cv.string,
         vol.Optional(CONF_IS_GROUP, default=False): cv.boolean,
         vol.Optional(CONF_IS_NATIVE_GROUP, default=False): cv.boolean,
         vol.Optional(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
@@ -239,8 +237,6 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._attr_name = config[CONF_NAME]
         self._attr_unique_id = config.get(CONF_UNIQUE_ID)
 
-        self._shutter_id: str = config.get(CONF_SHUTTER_ID) or self._attr_name.lower().replace(" ", "_")
-
         self._travel_time_up: float = config[CONF_TRAVEL_TIME_UP]
         self._travel_time_down: float = config[CONF_TRAVEL_TIME_DOWN]
         self._tilt_step_time_up: float = config[CONF_TILT_STEP_TIME_UP]
@@ -324,7 +320,6 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             ATTR_KNOWN_TILT_POSITION: self._known_tilt_position,
             "tilt_steps": TILT_STEP_COUNT,
             "integration": DOMAIN,
-            "shutter_id": self._shutter_id,
             "is_group": False,
             "travel_time_up": self._travel_time_up,
             "travel_time_down": self._travel_time_down,
@@ -635,7 +630,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         self._configured_members: list[str] = list(config[CONF_GROUP_MEMBERS])
         self._members: list[str] = []
         self._invalid_members: list[str] = []
-        self._shutter_id: str = config.get(CONF_SHUTTER_ID) or self._attr_name.lower().replace(" ", "_")
 
         self._current_cover_position: int = 0
         self._current_tilt_position: int = 0
@@ -676,7 +670,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
             ATTR_KNOWN_TILT_POSITION: self._known_tilt_position,
             "tilt_steps": TILT_STEP_COUNT,
             "integration": DOMAIN,
-            "shutter_id": self._shutter_id,
             "is_group": True,
             "group_members": self._configured_members,
             "valid_group_members": self._members,
