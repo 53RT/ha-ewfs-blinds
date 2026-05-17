@@ -187,6 +187,25 @@ data:
   tilt_step: 4
 ```
 
+## Service Example (Force Move)
+
+When the tracked cover state drifts from the actual physical state (e.g. after manual remote usage),
+the normal `open`/`close` commands may be skipped because the integration thinks the cover is already
+at the target position. The `force_move` service bypasses the position check and always sends the
+hardware command, then runs a full travel-time tracking cycle so the internal state re-syncs.
+
+```yaml
+service: warema_ewfs.force_move
+target:
+  entity_id: cover.kitchen
+data:
+  command: close
+```
+
+Supported `command` values: `open`, `close`.
+
+This works on single shutters, fan-out groups, and native remote groups.
+
 ## Local Quick Test
 
 ```zsh

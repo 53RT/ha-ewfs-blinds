@@ -107,3 +107,24 @@ simulate_command:
             - stop
             - tilt_up
             - tilt_down
+
+force_move:
+  name: Force move
+  description: Force open or close a cover regardless of its current tracked position. Useful when tracked state has drifted from the actual physical state.
+  fields:
+    entity_id:
+      name: Cover entity
+      description: The Warema EWFS cover or group entity.
+      required: true
+      selector:
+        entity:
+          domain: cover
+    command:
+      name: Command
+      description: Force open or close the cover.
+      required: true
+      selector:
+        select:
+          options:
+            - open
+            - close

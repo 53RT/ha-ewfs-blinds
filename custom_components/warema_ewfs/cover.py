@@ -64,6 +64,7 @@ SERVICE_SEND_COMMAND = "send_command"
 SERVICE_SET_POSITION_AND_TILT = "set_cover_position_and_tilt"
 SERVICE_SET_POSITION_AND_TILT_STEP = "set_cover_position_and_tilt_step"
 SERVICE_SIMULATE_COMMAND = "simulate_command"
+SERVICE_FORCE_MOVE = "force_move"
 ATTR_COMMAND = "command"
 ATTR_TILT_STEP = "tilt_step"
 
@@ -218,6 +219,11 @@ async def async_setup_platform(
         SERVICE_SIMULATE_COMMAND,
         {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
         "async_simulate_command",
+    )
+    platform.async_register_entity_service(
+        SERVICE_FORCE_MOVE,
+        {vol.Required(ATTR_COMMAND): vol.In(["open", "close"])},
+        "async_force_move",
     )
 
 
@@ -449,7 +455,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         """Expose raw command sending through an entity service."""
         await self._send_command(command)
 
-    async def _start_cover_move(self, target: int) -> None:
+    async def async_force_move(self, command: str) -> None:
+        """Force open/close regardless of tracked state."""
+        self._known_position = True
+        target = 100 if command == "open" else 0
+        await self._start_cover_move(target, force=True)
+
+    async def _start_cover_move(self, target: int, force: bool = False) -> None:
         self._refresh_estimates()
         target = clamp_percent(target)
         duration = compute_cover_duration(
@@ -458,10 +470,14 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             self._travel_time_up,
             self._travel_time_down,
         )
-        if duration <= 0:
+        if duration <= 0 and not force:
             return
 
         direction = "open" if target > self._current_cover_position else "close"
+        if duration <= 0:
+            # Force mode: full travel time in the target direction
+            duration = self._travel_time_up if target >= 50 else self._travel_time_down
+            direction = "open" if target >= 50 else "close"
         await self._send_command(direction)
 
         self._move_direction = "opening" if direction == "open" else "closing"
@@ -803,6 +819,30 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         elif command == "tilt_down":
             await self.async_close_cover_tilt()
 
+    async def async_force_move(self, command: str) -> None:
+        """Force open/close on all group members regardless of tracked state."""
+        self._revalidate_group_members()
+        if not self._members:
+            _LOGGER.warning(
+                "Warema EWFS group '%s' has no valid members. Check 'group_members'.",
+                self.entity_id or self._attr_name,
+            )
+            return
+
+        await self.hass.services.async_call(
+            DOMAIN,
+            SERVICE_FORCE_MOVE,
+            {"entity_id": self._members, ATTR_COMMAND: command},
+            blocking=True,
+        )
+        target = 100 if command == "open" else 0
+        inferred_tilt = 100 if command == "open" else 0
+        self._current_cover_position = target
+        self._known_position = True
+        self._current_tilt_position = inferred_tilt
+        self._known_tilt_position = True
+        self.async_write_ha_state()
+
     async def _fanout(self, service: str, extra: dict[str, Any] | None = None) -> None:
         self._revalidate_group_members()
         if not self._members:
@@ -995,14 +1035,17 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
         await self.async_set_cover_position_and_tilt(position=position, tilt_position=target_tilt)
 
-    async def _start_cover_move(self, target: int) -> None:
+    async def _start_cover_move(self, target: int, force: bool = False) -> None:
         self._refresh_estimates()
         target = clamp_percent(target)
 
-        if target == self._current_cover_position:
+        if target == self._current_cover_position and not force:
             return
 
         direction = "open" if target > self._current_cover_position else "close"
+        if target == self._current_cover_position:
+            # Force mode: infer direction from target value
+            direction = "open" if target >= 50 else "close"
         duration = self._travel_time_up if direction == "open" else self._travel_time_down
 
         await self._send_command(direction)

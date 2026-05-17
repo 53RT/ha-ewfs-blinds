@@ -2,7 +2,9 @@
 name = "ewfscover"
 version = "0.1.0"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.10.9",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.2"]
@@ -12,4 +14,11 @@ exclude-newer = "14 days"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "homeassistant-stubs>=2025.4.4",
+    "pytest-asyncio>=1.3.0",
+    "voluptuous>=0.15.2",
+]
 
