@@ -1,4 +1,4 @@
-"""Tests for WaremaEWFSCover force_move and _start_cover_move logic."""
+"""Tests for WaremaEWFSCover entity logic."""
 
 from __future__ import annotations
 
@@ -89,213 +89,599 @@ def _make_native_group(hass: MagicMock | None = None, **config_overrides: Any) -
     return cover
 
 
-# ---------------------------------------------------------------------------
+def _last_button_pressed(cover: WaremaEWFSCover) -> str:
+    """Return the entity_id of the last button.press call."""
+    return cover.hass.services.async_call.call_args[0][2]["entity_id"]
+
+
+# ===========================================================================
+# Properties
+# ===========================================================================
+
+
+class TestProperties:
+    """Test cover property behaviour."""
+
+    def test_is_closed_true_when_position_zero(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+        assert cover.is_closed is True
+
+    def test_is_closed_false_when_position_nonzero(self):
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        assert cover.is_closed is False
+
+    def test_is_closed_none_when_position_unknown(self):
+        cover = _make_cover()
+        cover._known_position = False
+        assert cover.is_closed is None
+
+    def test_is_opening_when_moving_up(self):
+        cover = _make_cover()
+        cover._move_direction = "opening"
+        assert cover.is_opening is True
+        assert cover.is_closing is False
+
+    def test_is_closing_when_moving_down(self):
+        cover = _make_cover()
+        cover._move_direction = "closing"
+        assert cover.is_closing is True
+        assert cover.is_opening is False
+
+    def test_is_opening_closing_none_when_idle(self):
+        cover = _make_cover()
+        cover._move_direction = None
+        assert cover.is_opening is False
+        assert cover.is_closing is False
+
+    def test_current_position_none_when_unknown(self):
+        cover = _make_cover()
+        cover._known_position = False
+        assert cover.current_cover_position is None
+
+    def test_current_position_returns_value_when_known(self):
+        cover = _make_cover()
+        cover._current_cover_position = 42
+        cover._known_position = True
+        assert cover.current_cover_position == 42
+
+    def test_current_tilt_none_when_unknown(self):
+        cover = _make_cover()
+        cover._known_tilt_position = False
+        assert cover.current_cover_tilt_position is None
+
+    def test_current_tilt_returns_value_when_known(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 67
+        cover._known_tilt_position = True
+        assert cover.current_cover_tilt_position == 67
+
+    def test_extra_state_attributes_contains_expected_keys(self):
+        cover = _make_cover()
+        attrs = cover.extra_state_attributes
+        assert attrs["integration"] == "warema_ewfs"
+        assert attrs["is_group"] is False
+        assert "travel_time_up" in attrs
+        assert "travel_time_down" in attrs
+        assert "tilt_step_time_up" in attrs
+        assert "tilt_step_time_down" in attrs
+        assert "tilt_steps" in attrs
+
+
+# ===========================================================================
+# async_open_cover / async_close_cover
+# ===========================================================================
+
+
+class TestOpenClose:
+    """Test open and close cover methods."""
+
+    @pytest.mark.asyncio
+    async def test_open_cover_sends_open_command(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_open_cover()
+
+        assert _last_button_pressed(cover) == "button.open"
+
+    @pytest.mark.asyncio
+    async def test_open_cover_sets_known_position(self):
+        cover = _make_cover()
+        cover._known_position = False
+
+        await cover.async_open_cover()
+
+        assert cover._known_position is True
+
+    @pytest.mark.asyncio
+    async def test_open_cover_starts_tracking(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_open_cover()
+
+        assert cover._move_direction == "opening"
+        assert cover._move_target_pos == 100
+
+    @pytest.mark.asyncio
+    async def test_close_cover_sends_close_command(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_close_cover()
+
+        assert _last_button_pressed(cover) == "button.close"
+
+    @pytest.mark.asyncio
+    async def test_close_cover_starts_tracking(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_close_cover()
+
+        assert cover._move_direction == "closing"
+        assert cover._move_target_pos == 0
+
+
+# ===========================================================================
+# async_set_cover_position
+# ===========================================================================
+
+
+class TestSetCoverPosition:
+    """Test set_cover_position method."""
+
+    @pytest.mark.asyncio
+    async def test_set_position_opens_when_target_above(self):
+        cover = _make_cover()
+        cover._current_cover_position = 20
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=80)
+
+        assert _last_button_pressed(cover) == "button.open"
+        assert cover._move_direction == "opening"
+        assert cover._move_target_pos == 80
+
+    @pytest.mark.asyncio
+    async def test_set_position_closes_when_target_below(self):
+        cover = _make_cover()
+        cover._current_cover_position = 80
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=20)
+
+        assert _last_button_pressed(cover) == "button.close"
+        assert cover._move_direction == "closing"
+        assert cover._move_target_pos == 20
+
+    @pytest.mark.asyncio
+    async def test_set_position_skips_when_already_at_target(self):
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=50)
+
+        cover.hass.services.async_call.assert_not_called()
+
+
+# ===========================================================================
+# async_stop_cover
+# ===========================================================================
+
+
+class TestStopCover:
+    """Test stop cover method."""
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_sends_stop_command(self):
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover()
+
+        assert _last_button_pressed(cover) == "button.stop"
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_infers_tilt_100_when_opening(self):
+        cover = _make_cover()
+        cover._move_direction = "opening"
+        cover._current_tilt_position = 0
+
+        await cover.async_stop_cover()
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_infers_tilt_0_when_closing(self):
+        cover = _make_cover()
+        cover._move_direction = "closing"
+        cover._current_tilt_position = 100
+
+        await cover.async_stop_cover()
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_clears_movement_tracking(self):
+        cover = _make_cover()
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover()
+
+        assert cover._move_direction is None
+
+
+# ===========================================================================
+# Tilt methods
+# ===========================================================================
+
+
+class TestTilt:
+    """Test tilt cover methods."""
+
+    @pytest.mark.asyncio
+    async def test_open_tilt_increments_by_one_step(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50  # step 3
+        cover._known_tilt_position = True
+
+        await cover.async_open_cover_tilt()
+
+        # step 3 -> step 4 = 67%
+        assert cover._current_tilt_position == 67
+
+    @pytest.mark.asyncio
+    async def test_close_tilt_decrements_by_one_step(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50  # step 3
+        cover._known_tilt_position = True
+
+        await cover.async_close_cover_tilt()
+
+        # step 3 -> step 2 = 33%
+        assert cover._current_tilt_position == 33
+
+    @pytest.mark.asyncio
+    async def test_open_tilt_clamps_at_max(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 100  # step 6
+        cover._known_tilt_position = True
+
+        await cover.async_open_cover_tilt()
+
+        # already at max, stays at 100
+        assert cover._current_tilt_position == 100
+
+    @pytest.mark.asyncio
+    async def test_close_tilt_clamps_at_min(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 0  # step 0
+        cover._known_tilt_position = True
+
+        await cover.async_close_cover_tilt()
+
+        # already at min, stays at 0
+        assert cover._current_tilt_position == 0
+
+    @pytest.mark.asyncio
+    async def test_set_tilt_position_snaps_to_step(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 0
+        cover._known_tilt_position = True
+
+        await cover.async_set_cover_tilt_position(tilt_position=45)
+
+        # 45% snaps to step 3 = 50%
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_set_tilt_sends_correct_number_of_commands(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 0  # step 0
+        cover._known_tilt_position = True
+
+        await cover.async_set_cover_tilt_position(tilt_position=50)
+
+        # step 0 -> step 3 = 3 tilt_up commands
+        assert cover.hass.services.async_call.call_count == 3
+        for call in cover.hass.services.async_call.call_args_list:
+            assert call[0][2]["entity_id"] == "button.tilt_up"
+
+    @pytest.mark.asyncio
+    async def test_stop_tilt_sends_stop_command(self):
+        cover = _make_cover()
+
+        await cover.async_stop_cover_tilt()
+
+        assert _last_button_pressed(cover) == "button.stop"
+
+
+# ===========================================================================
+# async_send_named_command
+# ===========================================================================
+
+
+class TestSendNamedCommand:
+    """Test send_named_command dispatches correctly."""
+
+    @pytest.mark.asyncio
+    async def test_send_named_open(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_send_named_command("open")
+
+        assert _last_button_pressed(cover) == "button.open"
+
+    @pytest.mark.asyncio
+    async def test_send_named_close(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_send_named_command("close")
+
+        assert _last_button_pressed(cover) == "button.close"
+
+    @pytest.mark.asyncio
+    async def test_send_named_stop(self):
+        cover = _make_cover()
+
+        await cover.async_send_named_command("stop")
+
+        assert _last_button_pressed(cover) == "button.stop"
+
+    @pytest.mark.asyncio
+    async def test_send_named_tilt_up(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+
+        await cover.async_send_named_command("tilt_up")
+
+        assert _last_button_pressed(cover) == "button.tilt_up"
+
+    @pytest.mark.asyncio
+    async def test_send_named_tilt_down(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+
+        await cover.async_send_named_command("tilt_down")
+
+        assert _last_button_pressed(cover) == "button.tilt_down"
+
+
+# ===========================================================================
 # _start_cover_move: normal behaviour (regression)
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_start_cover_move_skips_when_already_at_target():
-    """Normal mode: no command when already at target position."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = True
+class TestStartCoverMove:
+    """Test _start_cover_move normal and force behaviour."""
 
-    await cover._start_cover_move(0)
+    @pytest.mark.asyncio
+    async def test_skips_when_already_at_target(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    cover.hass.services.async_call.assert_not_called()
+        await cover._start_cover_move(0)
 
+        cover.hass.services.async_call.assert_not_called()
 
-@pytest.mark.asyncio
-async def test_start_cover_move_sends_command_when_not_at_target():
-    """Normal mode: sends command when target differs from current position."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = True
+    @pytest.mark.asyncio
+    async def test_sends_command_when_not_at_target(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    await cover._start_cover_move(100)
+        await cover._start_cover_move(100)
 
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][0] == "button"
-    assert call_kwargs[0][1] == "press"
-    assert call_kwargs[0][2]["entity_id"] == "button.open"
+        cover.hass.services.async_call.assert_called_once()
+        assert _last_button_pressed(cover) == "button.open"
 
+    @pytest.mark.asyncio
+    async def test_force_sends_close_when_already_closed(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-# ---------------------------------------------------------------------------
-# _start_cover_move: force mode
-# ---------------------------------------------------------------------------
+        await cover._start_cover_move(0, force=True)
 
+        cover.hass.services.async_call.assert_called_once()
+        assert _last_button_pressed(cover) == "button.close"
 
-@pytest.mark.asyncio
-async def test_start_cover_move_force_sends_close_when_already_closed():
-    """Force mode: sends close command even when tracked position is already 0."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = True
+    @pytest.mark.asyncio
+    async def test_force_sends_open_when_already_open(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
 
-    await cover._start_cover_move(0, force=True)
+        await cover._start_cover_move(100, force=True)
 
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][2]["entity_id"] == "button.close"
+        cover.hass.services.async_call.assert_called_once()
+        assert _last_button_pressed(cover) == "button.open"
 
+    @pytest.mark.asyncio
+    async def test_force_uses_full_travel_time_for_close(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-@pytest.mark.asyncio
-async def test_start_cover_move_force_sends_open_when_already_open():
-    """Force mode: sends open command even when tracked position is already 100."""
-    cover = _make_cover()
-    cover._current_cover_position = 100
-    cover._known_position = True
+        await cover._start_cover_move(0, force=True)
 
-    await cover._start_cover_move(100, force=True)
+        assert cover._move_duration == DEFAULT_TRAVEL_TIME_DOWN
+        assert cover._move_direction == "closing"
 
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][2]["entity_id"] == "button.open"
+    @pytest.mark.asyncio
+    async def test_force_uses_full_travel_time_for_open(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
 
+        await cover._start_cover_move(100, force=True)
 
-@pytest.mark.asyncio
-async def test_start_cover_move_force_uses_full_travel_time_for_close():
-    """Force mode at target 0: duration equals travel_time_down."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = True
+        assert cover._move_duration == DEFAULT_TRAVEL_TIME_UP
+        assert cover._move_direction == "opening"
 
-    await cover._start_cover_move(0, force=True)
+    @pytest.mark.asyncio
+    async def test_partial_move_calculates_proportional_duration(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    assert cover._move_duration == DEFAULT_TRAVEL_TIME_DOWN
-    assert cover._move_direction == "closing"
-    assert cover._move_target_pos == 0
+        await cover._start_cover_move(50)
 
-
-@pytest.mark.asyncio
-async def test_start_cover_move_force_uses_full_travel_time_for_open():
-    """Force mode at target 100: duration equals travel_time_up."""
-    cover = _make_cover()
-    cover._current_cover_position = 100
-    cover._known_position = True
-
-    await cover._start_cover_move(100, force=True)
-
-    assert cover._move_duration == DEFAULT_TRAVEL_TIME_UP
-    assert cover._move_direction == "opening"
-    assert cover._move_target_pos == 100
+        # 50% of travel_time_up
+        assert cover._move_duration == pytest.approx(DEFAULT_TRAVEL_TIME_UP * 0.5)
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # async_force_move
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_force_move_close_sets_known_position_and_sends():
-    """async_force_move('close') marks position known and sends close."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = False
+class TestForceMove:
+    """Test async_force_move service method."""
 
-    await cover.async_force_move("close")
+    @pytest.mark.asyncio
+    async def test_force_close_sets_known_position(self):
+        cover = _make_cover()
+        cover._known_position = False
 
-    assert cover._known_position is True
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][2]["entity_id"] == "button.close"
+        await cover.async_force_move("close")
 
+        assert cover._known_position is True
+        assert _last_button_pressed(cover) == "button.close"
 
-@pytest.mark.asyncio
-async def test_force_move_open_sets_known_position_and_sends():
-    """async_force_move('open') marks position known and sends open."""
-    cover = _make_cover()
-    cover._current_cover_position = 100
-    cover._known_position = False
+    @pytest.mark.asyncio
+    async def test_force_open_sets_known_position(self):
+        cover = _make_cover()
+        cover._known_position = False
 
-    await cover.async_force_move("open")
+        await cover.async_force_move("open")
 
-    assert cover._known_position is True
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][2]["entity_id"] == "button.open"
+        assert cover._known_position is True
+        assert _last_button_pressed(cover) == "button.open"
 
+    @pytest.mark.asyncio
+    async def test_force_close_when_already_closed(self):
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-@pytest.mark.asyncio
-async def test_force_move_close_when_tracked_position_already_closed():
-    """async_force_move('close') sends command even when already at position 0."""
-    cover = _make_cover()
-    cover._current_cover_position = 0
-    cover._known_position = True
+        await cover.async_force_move("close")
 
-    await cover.async_force_move("close")
+        cover.hass.services.async_call.assert_called_once()
+        assert cover._move_direction == "closing"
 
-    cover.hass.services.async_call.assert_called_once()
-    assert cover._move_direction == "closing"
+    @pytest.mark.asyncio
+    async def test_force_open_when_already_open(self):
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._known_position = True
 
+        await cover.async_force_move("open")
 
-@pytest.mark.asyncio
-async def test_force_move_open_when_tracked_position_already_open():
-    """async_force_move('open') sends command even when already at position 100."""
-    cover = _make_cover()
-    cover._current_cover_position = 100
-    cover._known_position = True
-
-    await cover.async_force_move("open")
-
-    cover.hass.services.async_call.assert_called_once()
-    assert cover._move_direction == "opening"
+        cover.hass.services.async_call.assert_called_once()
+        assert cover._move_direction == "opening"
 
 
-# ---------------------------------------------------------------------------
-# WaremaEWFSNativeGroupCover: force mode
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# WaremaEWFSNativeGroupCover
+# ===========================================================================
 
 
-@pytest.mark.asyncio
-async def test_native_group_start_cover_move_skips_when_already_at_target():
-    """Native group: no command when already at target (normal mode)."""
-    cover = _make_native_group()
-    cover._current_cover_position = 0
-    cover._known_position = True
+class TestNativeGroupCover:
+    """Test native group cover specifics."""
 
-    await cover._start_cover_move(0)
+    @pytest.mark.asyncio
+    async def test_start_cover_move_skips_when_at_target(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    cover.hass.services.async_call.assert_not_called()
+        await cover._start_cover_move(0)
 
+        cover.hass.services.async_call.assert_not_called()
 
-@pytest.mark.asyncio
-async def test_native_group_start_cover_move_force_sends_when_at_target():
-    """Native group: force sends close even when tracked at 0."""
-    cover = _make_native_group()
-    cover._current_cover_position = 0
-    cover._known_position = True
+    @pytest.mark.asyncio
+    async def test_start_cover_move_force_sends_when_at_target(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    await cover._start_cover_move(0, force=True)
+        await cover._start_cover_move(0, force=True)
 
-    cover.hass.services.async_call.assert_called_once()
-    call_kwargs = cover.hass.services.async_call.call_args
-    assert call_kwargs[0][2]["entity_id"] == "button.close"
+        cover.hass.services.async_call.assert_called_once()
+        assert _last_button_pressed(cover) == "button.close"
 
+    @pytest.mark.asyncio
+    async def test_force_move_close(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-@pytest.mark.asyncio
-async def test_native_group_force_move_close():
-    """Native group async_force_move('close') sends close at position 0."""
-    cover = _make_native_group()
-    cover._current_cover_position = 0
-    cover._known_position = True
+        await cover.async_force_move("close")
 
-    await cover.async_force_move("close")
+        cover.hass.services.async_call.assert_called_once()
+        assert cover._move_direction == "closing"
 
-    cover.hass.services.async_call.assert_called_once()
-    assert cover._move_direction == "closing"
+    @pytest.mark.asyncio
+    async def test_force_move_open(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 100
+        cover._known_position = True
 
+        await cover.async_force_move("open")
 
-@pytest.mark.asyncio
-async def test_native_group_force_move_open():
-    """Native group async_force_move('open') sends open at position 100."""
-    cover = _make_native_group()
-    cover._current_cover_position = 100
-    cover._known_position = True
+        cover.hass.services.async_call.assert_called_once()
+        assert cover._move_direction == "opening"
 
-    await cover.async_force_move("open")
+    @pytest.mark.asyncio
+    async def test_uses_full_travel_time_for_any_target(self):
+        """Native group always uses full travel time, not proportional."""
+        cover = _make_native_group()
+        cover._current_cover_position = 0
+        cover._known_position = True
 
-    cover.hass.services.async_call.assert_called_once()
-    assert cover._move_direction == "opening"
+        await cover._start_cover_move(100)
+
+        assert cover._move_duration == DEFAULT_TRAVEL_TIME_UP
+        assert cover._move_target_pos == 100
+
+    @pytest.mark.asyncio
+    async def test_open_moves_target_to_100(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_open_cover()
+
+        assert cover._move_target_pos == 100
+
+    @pytest.mark.asyncio
+    async def test_close_moves_target_to_0(self):
+        cover = _make_native_group()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_close_cover()
+
+        assert cover._move_target_pos == 0
