@@ -25,7 +25,18 @@ The integration is time-based (optimistic):
 
 ## Installation in Home Assistant
 
-1. Copy `custom_components/warema_ewfs` into your Home Assistant config directory.
+### HACS (recommended)
+
+1. Open HACS in your Home Assistant instance.
+2. Go to **Integrations** → three-dot menu → **Custom repositories**.
+3. Add the repository URL and select **Integration** as the category.
+4. Search for *Warema EWFS Cover* in HACS and install it.
+5. Restart Home Assistant.
+6. Configure shutters and optional groups in `configuration.yaml` (see below).
+
+### Manual
+
+1. Copy the `custom_components/warema_ewfs` folder into your Home Assistant `config/custom_components/` directory.
 2. Restart Home Assistant.
 3. Configure shutters and optional groups in `configuration.yaml`.
 

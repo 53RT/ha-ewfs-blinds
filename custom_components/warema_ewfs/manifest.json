@@ -2,8 +2,12 @@
   "domain": "warema_ewfs",
   "name": "Warema EWFS Cover",
   "version": "0.1.0",
-  "documentation": "https://example.invalid/warema_ewfs",
+  "documentation": "https://github.com/gert/ha-warema-ewfs",
+  "issue_tracker": "https://github.com/gert/ha-warema-ewfs/issues",
   "requirements": [],
-  "codeowners": []
+  "dependencies": [],
+  "codeowners": [],
+  "iot_class": "assumed_state",
+  "integration_type": "hub"
 }
 

@@ -1,0 +1,63 @@
+{
+  "services": {
+    "send_command": {
+      "name": "Send EWFS command",
+      "description": "Trigger one logical command on a shutter or group (mapped to button entities).",
+      "fields": {
+        "command": {
+          "name": "Command name",
+          "description": "One of open, close, stop, tilt_up, tilt_down."
+        }
+      }
+    },
+    "set_cover_position_and_tilt": {
+      "name": "Set cover position and tilt",
+      "description": "Move to a cover position first, then apply the tilt target.",
+      "fields": {
+        "position": {
+          "name": "Cover position",
+          "description": "Target cover position in percent (0–100). 0 = fully closed, 100 = fully open."
+        },
+        "tilt_position": {
+          "name": "Tilt position",
+          "description": "Target tilt position in percent (0–100). 0 = fully closed, 100 = fully open."
+        }
+      }
+    },
+    "set_cover_position_and_tilt_step": {
+      "name": "Set cover position and tilt step",
+      "description": "Move to a cover position first, then apply a discrete tilt step (0–6).",
+      "fields": {
+        "position": {
+          "name": "Cover position",
+          "description": "Target cover position in percent (0–100). 0 = fully closed, 100 = fully open."
+        },
+        "tilt_step": {
+          "name": "Tilt step",
+          "description": "Target tilt step (0–6, where 0 = vertical and 6 = horizontal)."
+        }
+      }
+    },
+    "simulate_command": {
+      "name": "Simulate external command",
+      "description": "Update cover position tracking as if a command was received from an external remote, without sending any hardware command.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "The command detected from the external remote."
+        }
+      }
+    },
+    "force_move": {
+      "name": "Force move",
+      "description": "Force open or close a cover regardless of its current tracked position. Useful when tracked state has drifted from the actual physical state.",
+      "fields": {
+        "command": {
+          "name": "Command",
+          "description": "Force open or close the cover."
+        }
+      }
+    }
+  }
+}
+
