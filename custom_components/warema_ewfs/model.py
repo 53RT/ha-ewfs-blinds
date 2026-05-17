@@ -67,5 +67,3 @@ def tilt_percent_to_step(tilt_percent: int, step_count: int = 7) -> int:
     if step_count <= 1:
         return 0
     return round((clamp_percent(tilt_percent) / 100.0) * (step_count - 1))
-
-

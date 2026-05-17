@@ -18,10 +18,11 @@ from homeassistant.components.cover import (
 )
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv, entity_platform
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_platform
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_time_interval
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
@@ -35,8 +36,8 @@ from .const import (
     CONF_GROUP_MEMBERS,
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
-    CONF_SHUTTER_ID,
     CONF_SEND_STOP_AFTER_MOVE,
+    CONF_SHUTTER_ID,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
@@ -55,8 +56,8 @@ from .model import (
     compute_cover_duration,
     infer_tilt_after_cover_move,
     should_send_auto_stop,
-    tilt_percent_to_step,
     snap_to_tilt_step,
+    tilt_percent_to_step,
     tilt_step_to_percent,
 )
 
@@ -374,13 +375,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._stop_cover_tracking()
         self.async_write_ha_state()
 
-#    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-#        self._known_tilt_position = True
-#        await self._start_tilt_move(100)
+    #    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+    #        self._known_tilt_position = True
+    #        await self._start_tilt_move(100)
 
-#    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-#        self._known_tilt_position = True
-#        await self._start_tilt_move(0)
+    #    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+    #        self._known_tilt_position = True
+    #        await self._start_tilt_move(0)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._known_tilt_position = True
@@ -725,17 +726,17 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._fanout("stop_cover")
 
-#    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-#        await self._fanout("open_cover_tilt")
-#        self._current_tilt_position = 100
-#        self._known_tilt_position = True
-#        self.async_write_ha_state()
-#
-#    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-#        await self._fanout("close_cover_tilt")
-#        self._current_tilt_position = 0
-#        self._known_tilt_position = True
-#        self.async_write_ha_state()
+    #    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
+    #        await self._fanout("open_cover_tilt")
+    #        self._current_tilt_position = 100
+    #        self._known_tilt_position = True
+    #        self.async_write_ha_state()
+    #
+    #    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
+    #        await self._fanout("close_cover_tilt")
+    #        self._current_tilt_position = 0
+    #        self._known_tilt_position = True
+    #        self.async_write_ha_state()
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
@@ -754,7 +755,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         self._current_tilt_position = target
         self._known_tilt_position = True
         self.async_write_ha_state()
-
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         target = snap_to_tilt_step(clamp_percent(float(kwargs[ATTR_TILT_POSITION])), TILT_STEP_COUNT)
@@ -1078,13 +1078,13 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
             attr_tilt_up = state.attributes.get("tilt_step_time_up")
             attr_tilt_down = state.attributes.get("tilt_step_time_down")
 
-            if isinstance(attr_up, (int, float)):
+            if isinstance(attr_up, int | float):
                 max_up = max(max_up or 0.0, float(attr_up))
-            if isinstance(attr_down, (int, float)):
+            if isinstance(attr_down, int | float):
                 max_down = max(max_down or 0.0, float(attr_down))
-            if isinstance(attr_tilt_up, (int, float)):
+            if isinstance(attr_tilt_up, int | float):
                 max_tilt_up = max(max_tilt_up or 0.0, float(attr_tilt_up))
-            if isinstance(attr_tilt_down, (int, float)):
+            if isinstance(attr_tilt_down, int | float):
                 max_tilt_down = max(max_tilt_down or 0.0, float(attr_tilt_down))
 
         if max_up is not None:
@@ -1123,5 +1123,3 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
                 "Native Warema group '%s' has no valid members for travel-time derivation.",
                 self.entity_id or self._attr_name,
             )
-
-

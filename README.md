@@ -217,13 +217,68 @@ Supported `command` values: `open`, `close`.
 
 This works on single shutters, fan-out groups, and native remote groups.
 
-## Local Quick Test
+## Development
+
+This project uses [uv](https://docs.astral.sh/uv/) for package management and
+[pre-commit](https://pre-commit.com/) for code quality checks.
+
+### Setup
 
 ```zsh
-python -m pip install -e '.[dev]'
-pytest
-python main.py
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone the repo and install all dev dependencies
+uv sync --group dev
+
+# Install pre-commit hooks
+uv run pre-commit install
 ```
+
+### Common Commands
+
+```zsh
+# Run tests
+uv run pytest
+
+# Run linter
+uv run ruff check .
+
+# Run formatter
+uv run ruff format .
+
+# Run all pre-commit hooks manually
+uv run pre-commit run --all-files
+
+# Add a dev dependency
+uv add --dev <package>
+```
+
+### Pre-commit Hooks
+
+The following hooks run automatically on every commit:
+
+| Hook | Purpose |
+|---|---|
+| `trailing-whitespace` | Remove trailing whitespace |
+| `end-of-file-fixer` | Ensure files end with a newline |
+| `check-yaml` | Validate YAML syntax (`services.yaml`, etc.) |
+| `check-json` | Validate JSON syntax (`manifest.json`, `hacs.json`, etc.) |
+| `check-added-large-files` | Prevent committing large files |
+| `check-merge-conflict` | Catch merge conflict markers |
+| `debug-statements` | Flag leftover `breakpoint()` / `pdb` calls |
+| `ruff` | Lint Python code (with auto-fix) |
+| `ruff-format` | Format Python code |
+
+Tests (`pytest`) run automatically on `git push` (pre-push stage).
+
+### CI
+
+GitHub Actions runs on every push/PR to `main`:
+- **HACS** — validates HACS compatibility
+- **Hassfest** — validates `manifest.json` and integration structure
+- **Ruff** — linting and format checks
+- **Tests** — runs `pytest`
 
 ## Calibration and Notes
 
@@ -231,4 +286,3 @@ python main.py
 - Fine-tune tilt using the 7-step model and per-step timing values.
 - Without physical feedback, position is estimated from elapsed time.
 - Manual wall-remote usage can temporarily introduce drift until HA sends a new command.
-

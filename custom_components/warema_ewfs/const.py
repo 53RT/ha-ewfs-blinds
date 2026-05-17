@@ -30,4 +30,3 @@ CONF_BTN_TILT_DOWN = "btn_tilt_down"
 
 ATTR_KNOWN_POSITION = "known_position"
 ATTR_KNOWN_TILT_POSITION = "known_tilt_position"
-
