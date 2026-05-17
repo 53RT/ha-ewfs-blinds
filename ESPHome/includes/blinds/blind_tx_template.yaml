@@ -1,25 +1,35 @@
-# /homeassistant/esphome/includes/blinds/blind_template.yaml
-# Parameters: blind_name, code_up, code_down, code_stop, code_long_up, code_long_down
+# blind_tx_template.yaml – Warema EWFS RF transmitter buttons
+#
+# Creates 5 button entities per blind:
+#   - Up/Down:      long press (20 repeats) – full cover travel
+#   - Stop:         short burst (4 repeats) – stop command
+#   - Tilt Up/Down: short press (4 repeats) – single tilt step
+#
+# Parameters:
+#   blind_name: Human-readable name (e.g. "EG Kitchen")
+#   code_up:    Normalized raw timing list for UP command
+#   code_down:  Normalized raw timing list for DOWN command
+#   code_stop:  Normalized raw timing list for STOP command
 
 button:
   - platform: template
     name: "${blind_name} Up"
-    icon: mdi:arrow-up
+    icon: mdi:arrow-collapse-up
     on_press:
       - remote_transmitter.transmit_raw:
           code: ${code_up}
           repeat:
-            times: 20
+            times: 12
             wait_time: 5ms
 
   - platform: template
     name: "${blind_name} Down"
-    icon: mdi:arrow-down
+    icon: mdi:arrow-collapse-down
     on_press:
       - remote_transmitter.transmit_raw:
           code: ${code_down}
           repeat:
-            times: 20
+            times: 12
             wait_time: 5ms
 
   - platform: template
@@ -34,7 +44,7 @@ button:
 
   - platform: template
     name: "${blind_name} Tilt Up"
-    icon: mdi:arrow-up
+    icon: mdi:arrow-top-right
     on_press:
       - remote_transmitter.transmit_raw:
           code: ${code_up}
@@ -44,7 +54,7 @@ button:
 
   - platform: template
     name: "${blind_name} Tilt Down"
-    icon: mdi:arrow-down
+    icon: mdi:arrow-bottom-right
     on_press:
       - remote_transmitter.transmit_raw:
           code: ${code_down}

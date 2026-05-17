@@ -1,7 +1,16 @@
-# --- blind_receiver_template.yaml ---
+# blind_rx_template.yaml – Warema EWFS RF receiver sensors
 #
-# This template defines three binary sensors for receiving RF commands (up/down/stop) for a blind.
-# It tracks the last received command, the count of repeated commands, and the time of the last command to help with state management in Home Assistant.
+# Creates 3 internal binary sensors per blind that detect RF commands from
+# the original Warema remote. Each received frame increments a counter;
+# the burst-debounce logic in the main config consolidates them into a
+# single event with shutter name, command type, and press duration.
+#
+# Parameters:
+#   blind_name: Machine-readable ID (e.g. "warema_eg_kitchen") – used for
+#               sensor IDs and as the shutter identifier in events
+#   code_up:    Normalized raw timing list for UP command
+#   code_down:  Normalized raw timing list for DOWN command
+#   code_stop:  Normalized raw timing list for STOP command
 
 binary_sensor:
   - platform: remote_receiver
