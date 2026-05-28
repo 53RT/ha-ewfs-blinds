@@ -1,0 +1,17 @@
+{
+  "entity": {
+    "cover": {
+      "_": {
+        "default": "mdi:blinds"
+      }
+    }
+  },
+  "services": {
+    "send_command": "mdi:remote",
+    "simulate_command": "mdi:eye",
+    "simulate_set_tilt_position": "mdi:blinds",
+    "set_cover_position_and_tilt": "mdi:arrow-expand-vertical",
+    "set_cover_position_and_tilt_step": "mdi:arrow-expand-vertical",
+    "force_move": "mdi:fast-forward"
+  }
+}

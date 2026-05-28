@@ -1,4 +1,107 @@
 {
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Warema EWFS cover",
+        "description": "Select the type of cover you want to add.",
+        "data": {
+          "cover_type": "Cover type"
+        }
+      },
+      "single": {
+        "title": "Single shutter",
+        "description": "Map the five logical commands to ESPHome button entities and configure travel times.",
+        "data": {
+          "name": "Name",
+          "btn_open": "Open button",
+          "btn_close": "Close button",
+          "btn_stop": "Stop button",
+          "btn_tilt_up": "Tilt up button",
+          "btn_tilt_down": "Tilt down button",
+          "travel_time_up": "Travel time up (s)",
+          "travel_time_down": "Travel time down (s)",
+          "tilt_step_time_up": "Tilt step time up (s)",
+          "tilt_step_time_down": "Tilt step time down (s)",
+          "send_stop_after_move": "Send stop after move"
+        }
+      },
+      "group": {
+        "title": "Fan-out group",
+        "description": "Select the single-shutter cover entities that belong to this group.",
+        "data": {
+          "name": "Name",
+          "group_members": "Member covers",
+          "command_delay": "Delay between commands (s)"
+        }
+      },
+      "native_group": {
+        "title": "Native remote group",
+        "description": "Map the five group command buttons and select the member covers whose state will be updated.",
+        "data": {
+          "name": "Name",
+          "group_members": "Member covers",
+          "btn_open": "Group open button",
+          "btn_close": "Group close button",
+          "btn_stop": "Group stop button",
+          "btn_tilt_up": "Group tilt up button",
+          "btn_tilt_down": "Group tilt down button",
+          "travel_time_up": "Travel time up (s)",
+          "travel_time_down": "Travel time down (s)",
+          "tilt_step_time_up": "Tilt step time up (s)",
+          "tilt_step_time_down": "Tilt step time down (s)",
+          "send_stop_after_move": "Send stop after move"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  },
+  "options": {
+    "step": {
+      "single": {
+        "title": "Single shutter options",
+        "data": {
+          "name": "Name",
+          "btn_open": "Open button",
+          "btn_close": "Close button",
+          "btn_stop": "Stop button",
+          "btn_tilt_up": "Tilt up button",
+          "btn_tilt_down": "Tilt down button",
+          "travel_time_up": "Travel time up (s)",
+          "travel_time_down": "Travel time down (s)",
+          "tilt_step_time_up": "Tilt step time up (s)",
+          "tilt_step_time_down": "Tilt step time down (s)",
+          "send_stop_after_move": "Send stop after move"
+        }
+      },
+      "group": {
+        "title": "Fan-out group options",
+        "data": {
+          "name": "Name",
+          "group_members": "Member covers",
+          "command_delay": "Delay between commands (s)"
+        }
+      },
+      "native_group": {
+        "title": "Native remote group options",
+        "data": {
+          "name": "Name",
+          "group_members": "Member covers",
+          "btn_open": "Group open button",
+          "btn_close": "Group close button",
+          "btn_stop": "Group stop button",
+          "btn_tilt_up": "Group tilt up button",
+          "btn_tilt_down": "Group tilt down button",
+          "travel_time_up": "Travel time up (s)",
+          "travel_time_down": "Travel time down (s)",
+          "tilt_step_time_up": "Tilt step time up (s)",
+          "tilt_step_time_down": "Tilt step time down (s)",
+          "send_stop_after_move": "Send stop after move"
+        }
+      }
+    }
+  },
   "services": {
     "send_command": {
       "name": "Send EWFS command",
@@ -45,6 +148,16 @@
         "command": {
           "name": "Command",
           "description": "The command detected from the external remote."
+        }
+      }
+    },
+    "simulate_set_tilt_position": {
+      "name": "Simulate set tilt position",
+      "description": "Set the tilt position directly without sending any hardware command.",
+      "fields": {
+        "tilt_position": {
+          "name": "Tilt position",
+          "description": "Target tilt position in percent (0–100)."
         }
       }
     },

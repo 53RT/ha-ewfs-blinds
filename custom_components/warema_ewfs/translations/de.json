@@ -1,0 +1,175 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Warema EWFS Raffstores hinzufügen",
+        "description": "Wähle den Typ des Raffstores aus, den du hinzufügen möchtest.",
+        "data": {
+          "cover_type": "Raffstore-Typ"
+        }
+      },
+      "single": {
+        "title": "Einzelner Raffstore",
+        "description": "Weise die fünf logischen Befehle ESPHome-Button-Entities zu und konfiguriere die Fahrzeiten.",
+        "data": {
+          "name": "Name",
+          "btn_open": "Öffnen-Schalter",
+          "btn_close": "Schließen-Schalter",
+          "btn_stop": "Stopp-Schalter",
+          "btn_tilt_up": "Lamellen öffnen-Schalter",
+          "btn_tilt_down": "Lamellen schließen-Schalter",
+          "travel_time_up": "Fahrzeit aufwärts (s)",
+          "travel_time_down": "Fahrzeit abwärts (s)",
+          "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
+          "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
+          "send_stop_after_move": "Stopp nach Fahrt senden"
+        }
+      },
+      "group": {
+        "title": "Fan-out-Gruppe",
+        "description": "Wähle die einzelnen Raffstore-Entities aus, die zu dieser Gruppe gehören.",
+        "data": {
+          "name": "Name",
+          "group_members": "Mitglieder",
+          "command_delay": "Verzögerung zwischen Befehlen (s)"
+        }
+      },
+      "native_group": {
+        "title": "Native Gruppe",
+        "description": "Weise die fünf Gruppen-Befehlsschaltflächen zu und wähle die Mitglieds-Entities aus, deren Status aktualisiert werden soll.",
+        "data": {
+          "name": "Name",
+          "group_members": "Mitglieder",
+          "btn_open": "Gruppe öffnen-Schalter",
+          "btn_close": "Gruppe schließen-Schalter",
+          "btn_stop": "Gruppe stopp-Schalter",
+          "btn_tilt_up": "Gruppe Lamellen öffnen-Schalter",
+          "btn_tilt_down": "Gruppe Lamellen schließen-Schalter",
+          "travel_time_up": "Fahrzeit aufwärts (s)",
+          "travel_time_down": "Fahrzeit abwärts (s)",
+          "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
+          "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
+          "send_stop_after_move": "Stopp nach Fahrt senden"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "single": {
+        "title": "Einstellungen – Einzelner Rollladen",
+        "data": {
+          "name": "Name",
+          "btn_open": "Öffnen-Schalter",
+          "btn_close": "Schließen-Schalter",
+          "btn_stop": "Stopp-Schalter",
+          "btn_tilt_up": "Lamellen öffnen-Schalter",
+          "btn_tilt_down": "Lamellen schließen-Schalter",
+          "travel_time_up": "Fahrzeit aufwärts (s)",
+          "travel_time_down": "Fahrzeit abwärts (s)",
+          "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
+          "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
+          "send_stop_after_move": "Stopp nach Fahrt senden"
+        }
+      },
+      "group": {
+        "title": "Einstellungen – Fan-out-Gruppe",
+        "data": {
+          "name": "Name",
+          "group_members": "Mitglieder",
+          "command_delay": "Verzögerung zwischen Befehlen (s)"
+        }
+      },
+      "native_group": {
+        "title": "Einstellungen – Native Fernbedienungsgruppe",
+        "data": {
+          "name": "Name",
+          "group_members": "Mitglieder",
+          "btn_open": "Gruppe öffnen-Schalter",
+          "btn_close": "Gruppe schließen-Schalter",
+          "btn_stop": "Gruppe stopp-Schalter",
+          "btn_tilt_up": "Gruppe Lamellen öffnen-Schalter",
+          "btn_tilt_down": "Gruppe Lamellen schließen-Schalter",
+          "travel_time_up": "Fahrzeit aufwärts (s)",
+          "travel_time_down": "Fahrzeit abwärts (s)",
+          "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
+          "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
+          "send_stop_after_move": "Stopp nach Fahrt senden"
+        }
+      }
+    }
+  },
+  "services": {
+    "send_command": {
+      "name": "EWFS-Befehl senden",
+      "description": "Löst einen logischen Befehl an einem Rollladen oder einer Gruppe aus (über Button-Entities).",
+      "fields": {
+        "command": {
+          "name": "Befehlsname",
+          "description": "Einer von: open, close, stop, tilt_up, tilt_down."
+        }
+      }
+    },
+    "set_cover_position_and_tilt": {
+      "name": "Position und Lamellenwinkel setzen",
+      "description": "Fährt zuerst zur Zielposition und stellt dann den Lamellenwinkel ein.",
+      "fields": {
+        "position": {
+          "name": "Rollladen-Position",
+          "description": "Zielposition in Prozent (0–100). 0 = vollständig geschlossen, 100 = vollständig geöffnet."
+        },
+        "tilt_position": {
+          "name": "Lamellenwinkel",
+          "description": "Ziel-Lamellenwinkel in Prozent (0–100). 0 = vertikal, 100 = horizontal."
+        }
+      }
+    },
+    "set_cover_position_and_tilt_step": {
+      "name": "Position und Lamellenstufe setzen",
+      "description": "Fährt zuerst zur Zielposition und stellt dann eine diskrete Lamellenstufe (0–6) ein.",
+      "fields": {
+        "position": {
+          "name": "Rollladen-Position",
+          "description": "Zielposition in Prozent (0–100). 0 = vollständig geschlossen, 100 = vollständig geöffnet."
+        },
+        "tilt_step": {
+          "name": "Lamellenstufe",
+          "description": "Ziel-Lamellenstufe (0–6, wobei 0 = vertikal und 6 = horizontal)."
+        }
+      }
+    },
+    "simulate_command": {
+      "name": "Externen Befehl simulieren",
+      "description": "Aktualisiert die Positionsverfolgung, als ob ein Befehl von einer externen Fernbedienung empfangen wurde – ohne einen Hardware-Befehl zu senden.",
+      "fields": {
+        "command": {
+          "name": "Befehl",
+          "description": "Der von der externen Fernbedienung erkannte Befehl."
+        }
+      }
+    },
+    "simulate_set_tilt_position": {
+      "name": "Lamellenwinkel simulieren",
+      "description": "Setzt den Lamellenwinkel direkt, ohne einen Hardware-Befehl zu senden.",
+      "fields": {
+        "tilt_position": {
+          "name": "Lamellenwinkel",
+          "description": "Ziel-Lamellenwinkel in Prozent (0–100)."
+        }
+      }
+    },
+    "force_move": {
+      "name": "Fahrt erzwingen",
+      "description": "Erzwingt das Öffnen oder Schließen eines Rollladens unabhängig von der aktuell gespeicherten Position. Nützlich, wenn die gespeicherte Position von der tatsächlichen physischen Position abweicht.",
+      "fields": {
+        "command": {
+          "name": "Befehl",
+          "description": "Rollladen öffnen oder schließen."
+        }
+      }
+    }
+  }
+}

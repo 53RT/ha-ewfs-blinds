@@ -16,6 +16,7 @@ from homeassistant.components.cover import (
     CoverEntity,
     CoverEntityFeature,
 )
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, CONF_UNIQUE_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
@@ -73,6 +74,7 @@ ATTR_TILT_STEP = "tilt_step"
 
 MOVE_UPDATE_INTERVAL = timedelta(milliseconds=500)
 _LOGGER = logging.getLogger(__name__)
+_SERVICES_REGISTERED_KEY = f"{DOMAIN}_services_registered"
 
 SINGLE_SHUTTER_SCHEMA = {
     vol.Required(CONF_BTN_OPEN): cv.entity_id,
@@ -187,6 +189,34 @@ async def async_setup_platform(
     discovery_info: dict[str, Any] | None = None,
 ) -> None:
     """Set up Warema EWFS cover entities from YAML configuration."""
+    _setup_cover_entity(hass, config, async_add_entities)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Warema EWFS cover entities from a config entry."""
+    config: dict[str, Any] = {**entry.data, **entry.options}
+    config.setdefault(CONF_IS_GROUP, False)
+    config.setdefault(CONF_IS_NATIVE_GROUP, False)
+    config.setdefault(CONF_TRAVEL_TIME_UP, DEFAULT_TRAVEL_TIME_UP)
+    config.setdefault(CONF_TRAVEL_TIME_DOWN, DEFAULT_TRAVEL_TIME_DOWN)
+    config.setdefault(CONF_TILT_STEP_TIME_UP, DEFAULT_TILT_STEP_TIME_UP)
+    config.setdefault(CONF_TILT_STEP_TIME_DOWN, DEFAULT_TILT_STEP_TIME_DOWN)
+    config.setdefault(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE)
+    config.setdefault(CONF_COMMAND_DELAY, DEFAULT_COMMAND_DELAY)
+    config[CONF_UNIQUE_ID] = entry.entry_id
+    _setup_cover_entity(hass, config, async_add_entities)
+
+
+def _setup_cover_entity(
+    hass: HomeAssistant,
+    config: dict[str, Any],
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Create the correct cover entity and register platform services once."""
     entity: WaremaEWFSCover | WaremaEWFSGroupCover | WaremaEWFSNativeGroupCover
     if config[CONF_IS_NATIVE_GROUP]:
         entity = WaremaEWFSNativeGroupCover(hass, config)
@@ -196,46 +226,48 @@ async def async_setup_platform(
         entity = WaremaEWFSCover(hass, config)
     async_add_entities([entity])
 
-    platform = entity_platform.async_get_current_platform()
-    platform.async_register_entity_service(
-        SERVICE_SEND_COMMAND,
-        {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
-        "async_send_named_command",
-    )
-    platform.async_register_entity_service(
-        SERVICE_SET_POSITION_AND_TILT,
-        {
-            vol.Required(ATTR_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-            vol.Required(ATTR_TILT_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-        },
-        "async_set_cover_position_and_tilt",
-    )
-    platform.async_register_entity_service(
-        SERVICE_SET_POSITION_AND_TILT_STEP,
-        {
-            vol.Required(ATTR_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
-            vol.Required(ATTR_TILT_STEP): vol.All(
-                vol.Coerce(int),
-                vol.Range(min=0, max=TILT_STEP_COUNT - 1),
-            ),
-        },
-        "async_set_cover_position_and_tilt_step",
-    )
-    platform.async_register_entity_service(
-        SERVICE_SIMULATE_COMMAND,
-        {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
-        "async_simulate_command",
-    )
-    platform.async_register_entity_service(
-        SERVICE_SIMULATE_SET_TILT,
-        {vol.Required(ATTR_TILT_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100))},
-        "async_simulate_set_tilt_position",
-    )
-    platform.async_register_entity_service(
-        SERVICE_FORCE_MOVE,
-        {vol.Required(ATTR_COMMAND): vol.In(["open", "close"])},
-        "async_force_move",
-    )
+    if not hass.data.get(_SERVICES_REGISTERED_KEY):
+        hass.data[_SERVICES_REGISTERED_KEY] = True
+        platform = entity_platform.async_get_current_platform()
+        platform.async_register_entity_service(
+            SERVICE_SEND_COMMAND,
+            {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
+            "async_send_named_command",
+        )
+        platform.async_register_entity_service(
+            SERVICE_SET_POSITION_AND_TILT,
+            {
+                vol.Required(ATTR_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+                vol.Required(ATTR_TILT_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+            },
+            "async_set_cover_position_and_tilt",
+        )
+        platform.async_register_entity_service(
+            SERVICE_SET_POSITION_AND_TILT_STEP,
+            {
+                vol.Required(ATTR_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+                vol.Required(ATTR_TILT_STEP): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=0, max=TILT_STEP_COUNT - 1),
+                ),
+            },
+            "async_set_cover_position_and_tilt_step",
+        )
+        platform.async_register_entity_service(
+            SERVICE_SIMULATE_COMMAND,
+            {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
+            "async_simulate_command",
+        )
+        platform.async_register_entity_service(
+            SERVICE_SIMULATE_SET_TILT,
+            {vol.Required(ATTR_TILT_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100))},
+            "async_simulate_set_tilt_position",
+        )
+        platform.async_register_entity_service(
+            SERVICE_FORCE_MOVE,
+            {vol.Required(ATTR_COMMAND): vol.In(["open", "close"])},
+            "async_force_move",
+        )
 
 
 class WaremaEWFSCover(CoverEntity, RestoreEntity):
