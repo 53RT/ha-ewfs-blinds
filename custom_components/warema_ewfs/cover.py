@@ -455,6 +455,9 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         """Force open/close regardless of tracked state."""
         self._known_position = True
         target = 100 if command == "open" else 0
+        # Force-set tilt immediately: open → slats horizontal (100), close → vertical (0)
+        self._current_tilt_position = target
+        self._known_tilt_position = True
         await self._start_cover_move(target, force=True)
 
     async def _start_cover_move(self, target: int, force: bool = False) -> None:

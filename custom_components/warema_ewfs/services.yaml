@@ -83,7 +83,6 @@ set_cover_position_and_tilt_step:
           mode: slider
           step: 1
 
-# services to update states without controlling the hardware
 simulate_command:
   name: Simulate external command
   description: Update cover position tracking as if a command was received from an external remote, without sending any hardware command.
