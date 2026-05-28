@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
@@ -312,9 +313,9 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._tilt_start_pos: int = 0
         self._tilt_target_pos: int = 0
 
-        self._unsub_move_timer = None
-        self._unsub_tilt_timer = None
-        self._unsub_interval = None
+        self._unsub_move_timer: Callable[[], None] | None = None
+        self._unsub_tilt_timer: Callable[[], None] | None = None
+        self._unsub_interval: Callable[[], None] | None = None
 
     @property
     def supported_features(self) -> CoverEntityFeature:
@@ -375,10 +376,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         """Restore previous state if available."""
         if (last_state := await self.async_get_last_state()) is not None:
             if (position := last_state.attributes.get(ATTR_POSITION)) is not None:
-                self._current_cover_position = clamp_percent(float(position))
+                self._current_cover_position = clamp_percent(float(str(position)))
                 self._known_position = True
             if (tilt := last_state.attributes.get(ATTR_TILT_POSITION)) is not None:
-                self._current_tilt_position = snap_to_tilt_step(int(float(tilt)), TILT_STEP_COUNT)
+                self._current_tilt_position = snap_to_tilt_step(int(float(str(tilt))), TILT_STEP_COUNT)
                 self._known_tilt_position = True
 
         if not self._known_position:
@@ -799,10 +800,10 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         self._revalidate_group_members(log_warning=True)
         if (last_state := await self.async_get_last_state()) is not None:
             if (position := last_state.attributes.get(ATTR_POSITION)) is not None:
-                self._current_cover_position = clamp_percent(float(position))
+                self._current_cover_position = clamp_percent(float(str(position)))
                 self._known_position = True
             if (tilt := last_state.attributes.get(ATTR_TILT_POSITION)) is not None:
-                self._current_tilt_position = snap_to_tilt_step(int(float(tilt)), TILT_STEP_COUNT)
+                self._current_tilt_position = snap_to_tilt_step(int(float(str(tilt))), TILT_STEP_COUNT)
                 self._known_tilt_position = True
 
     async def async_open_cover(self, **kwargs: Any) -> None:

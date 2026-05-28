@@ -28,13 +28,15 @@ The integration is time-based (optimistic):
 3. Add the repository URL and select **Integration** as the category.
 4. Search for *Warema EWFS Cover* in HACS and install it.
 5. Restart Home Assistant.
-6. Configure shutters and optional groups in `configuration.yaml` (see below).
+6. Configure shutters and optional groups in `configuration.yaml` or use the UI config flow.
+   - Go to **Settings** → **Devices & Services** → **Add Integration** and search for *Warema EWFS Cover*.
+   - Configure shutters and optional groups in `configuration.yaml` (see below).
 
 ### Manual
 
 1. Copy the `custom_components/warema_ewfs` folder into your Home Assistant `config/custom_components/` directory.
 2. Restart Home Assistant.
-3. Configure shutters and optional groups in `configuration.yaml`.
+3. Go to **Settings** → **Devices & Services** → **Add Integration** and search for *Warema EWFS Cover*.
 
 ## Configuration Model
 
@@ -164,12 +166,17 @@ cover:
 
 ## Config Flow (UI)
 
-The current implementation is YAML-based.
-If/when a Config Flow is added, it should expose the same fields:
+The integration fully supports the Home Assistant UI config flow. No YAML is required.
 
-- single shutter: five `btn_*` entities + timing values
-- fan-out group shutter: `is_group` and `group_members`
-- native remote group shutter: `is_native_group`, `group_members`, and five group `btn_*` entities
+**To add a new cover via the UI:**
+
+1. Go to **Settings** → **Devices & Services** → **Add Integration**.
+2. Search for *Warema EWFS Cover*.
+3. Select the cover type:
+   - **Single shutter** — map the five `btn_*` button entities and set travel/tilt times.
+   - **Fan-out group** — select member cover entities and optionally set a command delay.
+   - **Native remote group** — map the five group `btn_*` button entities, select member covers.
+4. All settings can be changed later via the integration's **Configure** button (Options Flow).
 
 ## Service Example (Position + Tilt)
 
