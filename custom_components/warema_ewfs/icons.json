@@ -1,9 +1,4 @@
 {
-  "entity_component": {
-    "_": {
-      "default": "mdi:blinds"
-    }
-  },
   "services": {
     "send_command": "mdi:remote",
     "simulate_command": "mdi:eye",
