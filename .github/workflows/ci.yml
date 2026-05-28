@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: home-assistant/action-hassfest@master
+      - uses: home-assistant/actions/hassfest@master
 
   ruff:
     name: Ruff lint & format
