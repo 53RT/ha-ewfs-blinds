@@ -1,13 +1,13 @@
 {
   "domain": "warema_ewfs",
   "name": "Warema EWFS Cover",
-  "version": "0.1.1",
+  "codeowners": ["@53RT"],
   "config_flow": true,
+  "dependencies": [],
   "documentation": "https://github.com/53RT/ha-ewfs-blinds",
+  "integration_type": "hub",
+  "iot_class": "assumed_state",
   "issue_tracker": "https://github.com/53RT/ha-ewfs-blinds/issues",
   "requirements": [],
-  "dependencies": [],
-  "codeowners": ["@53RT"],
-  "iot_class": "assumed_state",
-  "integration_type": "hub"
+  "version": "0.1.1"
 }
