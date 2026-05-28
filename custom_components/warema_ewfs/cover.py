@@ -33,6 +33,7 @@ from .const import (
     CONF_BTN_STOP,
     CONF_BTN_TILT_DOWN,
     CONF_BTN_TILT_UP,
+    CONF_COMMAND_DELAY,
     CONF_GROUP_MEMBERS,
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
@@ -41,6 +42,7 @@ from .const import (
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
     CONF_TRAVEL_TIME_UP,
+    DEFAULT_COMMAND_DELAY,
     DEFAULT_NAME,
     DEFAULT_SEND_STOP_AFTER_MOVE,
     DEFAULT_TILT_STEP_TIME_DOWN,
@@ -64,6 +66,7 @@ SERVICE_SEND_COMMAND = "send_command"
 SERVICE_SET_POSITION_AND_TILT = "set_cover_position_and_tilt"
 SERVICE_SET_POSITION_AND_TILT_STEP = "set_cover_position_and_tilt_step"
 SERVICE_SIMULATE_COMMAND = "simulate_command"
+SERVICE_SIMULATE_SET_TILT = "simulate_set_tilt_position"
 SERVICE_FORCE_MOVE = "force_move"
 ATTR_COMMAND = "command"
 ATTR_TILT_STEP = "tilt_step"
@@ -94,6 +97,9 @@ SINGLE_SHUTTER_SCHEMA = {
 
 GROUP_SCHEMA = {
     vol.Required(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
+    vol.Optional(CONF_COMMAND_DELAY, default=DEFAULT_COMMAND_DELAY): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=60)
+    ),
 }
 
 NATIVE_GROUP_SCHEMA = {
@@ -147,6 +153,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_TILT_STEP_TIME_UP): vol.Coerce(float),
         vol.Optional(CONF_TILT_STEP_TIME_DOWN): vol.Coerce(float),
         vol.Optional(CONF_SEND_STOP_AFTER_MOVE): cv.boolean,
+        vol.Optional(CONF_COMMAND_DELAY): vol.Coerce(float),
     }
 )
 PLATFORM_SCHEMA = vol.All(PLATFORM_SCHEMA, _validate_platform_config)
@@ -218,6 +225,11 @@ async def async_setup_platform(
         SERVICE_SIMULATE_COMMAND,
         {vol.Required(ATTR_COMMAND): vol.In(["open", "close", "stop", "tilt_up", "tilt_down"])},
         "async_simulate_command",
+    )
+    platform.async_register_entity_service(
+        SERVICE_SIMULATE_SET_TILT,
+        {vol.Required(ATTR_TILT_POSITION): vol.All(vol.Coerce(float), vol.Range(min=0, max=100))},
+        "async_simulate_set_tilt_position",
     )
     platform.async_register_entity_service(
         SERVICE_FORCE_MOVE,
@@ -451,6 +463,77 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         """Expose raw command sending through an entity service."""
         await self._send_command(command)
 
+    async def async_simulate_command(self, command: str) -> None:
+        """Update position as if a command was received, without sending anything."""
+        if command == "open":
+            self._known_position = True
+            await self._simulate_cover_move(100)
+        elif command == "close":
+            self._known_position = True
+            await self._simulate_cover_move(0)
+        elif command == "stop":
+            self._refresh_estimates()
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            elif self._move_direction == "closing":
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self._stop_tilt_tracking()
+            self.async_write_ha_state()
+        elif command == "tilt_up":
+            self._known_tilt_position = True
+            await self._simulate_tilt_move(100)
+        elif command == "tilt_down":
+            self._known_tilt_position = True
+            await self._simulate_tilt_move(0)
+
+    async def _simulate_cover_move(self, target: int) -> None:
+        """Start position tracking toward target without sending a hardware command."""
+        self._refresh_estimates()
+        target = clamp_percent(target)
+        duration = compute_cover_duration(
+            self._current_cover_position,
+            target,
+            self._travel_time_up,
+            self._travel_time_down,
+        )
+        if duration <= 0:
+            return
+
+        direction = "open" if target > self._current_cover_position else "close"
+        self._move_direction = "opening" if direction == "open" else "closing"
+        self._move_started_at = time.monotonic()
+        self._move_duration = duration
+        self._move_start_pos = self._current_cover_position
+        self._move_target_pos = target
+
+        self._schedule_cover_stop(duration)
+        self._ensure_interval_listener()
+        self.async_write_ha_state()
+
+    async def _simulate_tilt_move(self, target: int) -> None:
+        """Start tilt tracking toward target without sending a hardware command."""
+        target = snap_to_tilt_step(target, TILT_STEP_COUNT)
+        start_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
+        target_step = tilt_percent_to_step(target, TILT_STEP_COUNT)
+        if start_step == target_step:
+            return
+
+        step_sign = 1 if target_step > start_step else -1
+        next_step = start_step + step_sign
+        self._current_tilt_position = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
+        self._known_tilt_position = True
+        self.async_write_ha_state()
+
+    async def async_simulate_set_tilt_position(self, tilt_position: float) -> None:
+        """Set tilt position directly without sending any hardware commands."""
+        target = snap_to_tilt_step(clamp_percent(tilt_position), TILT_STEP_COUNT)
+        self._current_tilt_position = target
+        self._known_tilt_position = True
+        self.async_write_ha_state()
+
     async def async_force_move(self, command: str) -> None:
         """Force open/close regardless of tracked state."""
         self._known_position = True
@@ -633,6 +716,7 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         self._configured_members: list[str] = list(config[CONF_GROUP_MEMBERS])
         self._members: list[str] = []
         self._invalid_members: list[str] = []
+        self._command_delay: float = config.get(CONF_COMMAND_DELAY, DEFAULT_COMMAND_DELAY)
 
         self._current_cover_position: int = 0
         self._current_tilt_position: int = 0
@@ -848,75 +932,31 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
             )
             return
 
-        payload: dict[str, Any] = {"entity_id": self._members}
-        if extra:
-            payload.update(extra)
-        await self.hass.services.async_call("cover", service, payload, blocking=True)
+        if self._command_delay > 0:
+            for index, member in enumerate(self._members):
+                if index > 0:
+                    await asyncio.sleep(self._command_delay)
+                payload: dict[str, Any] = {"entity_id": member}
+                if extra:
+                    payload.update(extra)
+                await self.hass.services.async_call("cover", service, payload, blocking=True)
+        else:
+            payload = {"entity_id": self._members}
+            if extra:
+                payload.update(extra)
+            await self.hass.services.async_call("cover", service, payload, blocking=True)
 
     async def async_simulate_command(self, command: str) -> None:
-        """Update position as if a command was received, without sending anything."""
-        if command == "open":
-            self._known_position = True
-            await self._simulate_cover_move(100)
-        elif command == "close":
-            self._known_position = True
-            await self._simulate_cover_move(0)
-        elif command == "stop":
-            self._refresh_estimates()
-            if self._move_direction == "opening":
-                self._current_tilt_position = 100
-                self._known_tilt_position = True
-            elif self._move_direction == "closing":
-                self._current_tilt_position = 0
-                self._known_tilt_position = True
-            self._stop_cover_tracking()
-            self._stop_tilt_tracking()
-            self.async_write_ha_state()
-        elif command == "tilt_up":
-            self._known_tilt_position = True
-            await self._simulate_tilt_move(100)
-        elif command == "tilt_down":
-            self._known_tilt_position = True
-            await self._simulate_tilt_move(0)
-
-    async def _simulate_cover_move(self, target: int) -> None:
-        """Start position tracking toward target without sending a hardware command."""
-        self._refresh_estimates()
-        target = clamp_percent(target)
-        duration = compute_cover_duration(
-            self._current_cover_position,
-            target,
-            self._travel_time_up,
-            self._travel_time_down,
+        """Fan out simulate_command to all valid member entities."""
+        self._revalidate_group_members()
+        if not self._members:
+            return
+        await self.hass.services.async_call(
+            DOMAIN,
+            SERVICE_SIMULATE_COMMAND,
+            {"entity_id": self._members, ATTR_COMMAND: command},
+            blocking=True,
         )
-        if duration <= 0:
-            return
-
-        direction = "open" if target > self._current_cover_position else "close"
-        self._move_direction = "opening" if direction == "open" else "closing"
-        self._move_started_at = time.monotonic()
-        self._move_duration = duration
-        self._move_start_pos = self._current_cover_position
-        self._move_target_pos = target
-
-        self._schedule_cover_stop(duration)
-        self._ensure_interval_listener()
-        self.async_write_ha_state()
-
-    async def _simulate_tilt_move(self, target: int) -> None:
-        """Start tilt tracking toward target without sending a hardware command."""
-        target = snap_to_tilt_step(target, TILT_STEP_COUNT)
-        start_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
-        target_step = tilt_percent_to_step(target, TILT_STEP_COUNT)
-        if start_step == target_step:
-            return
-
-        # For simulation, just move one step (matching the "next position" behavior)
-        step_sign = 1 if target_step > start_step else -1
-        next_step = start_step + step_sign
-        self._current_tilt_position = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     def _revalidate_group_members(self, log_warning: bool = False) -> None:
         """Keep only valid Warema EWFS single-cover entities as group members."""
@@ -990,10 +1030,12 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
     async def async_open_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
         await super().async_open_cover(**kwargs)
+        await self._fanout_simulate("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
         await super().async_close_cover(**kwargs)
+        await self._fanout_simulate("close")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         requested = clamp_percent(float(kwargs[ATTR_POSITION]))
@@ -1013,14 +1055,17 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
         await super().async_open_cover_tilt(**kwargs)
+        await self._fanout_tilt(self._current_tilt_position)
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
         await super().async_close_cover_tilt(**kwargs)
+        await self._fanout_tilt(self._current_tilt_position)
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
         await super().async_set_cover_tilt_position(**kwargs)
+        await self._fanout_tilt(self._current_tilt_position)
 
     async def async_set_cover_position_and_tilt(self, position: float, tilt_position: float) -> None:
         target_position = clamp_percent(position)
@@ -1030,6 +1075,35 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
     async def async_set_cover_position_and_tilt_step(self, position: float, tilt_step: int) -> None:
         target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
         await self.async_set_cover_position_and_tilt(position=position, tilt_position=target_tilt)
+
+    async def async_force_move(self, command: str) -> None:
+        """Force open/close and propagate to all group members."""
+        await super().async_force_move(command)
+        await self._fanout_simulate(command)
+
+    async def _fanout_simulate(self, command: str) -> None:
+        """Send simulate_command to all valid member entities."""
+        self._revalidate_group_members()
+        if not self._members:
+            return
+        await self.hass.services.async_call(
+            DOMAIN,
+            SERVICE_SIMULATE_COMMAND,
+            {"entity_id": self._members, ATTR_COMMAND: command},
+            blocking=True,
+        )
+
+    async def _fanout_tilt(self, tilt_position: int) -> None:
+        """Set tilt position on all valid member entities without sending hardware commands."""
+        self._revalidate_group_members()
+        if not self._members:
+            return
+        await self.hass.services.async_call(
+            DOMAIN,
+            SERVICE_SIMULATE_SET_TILT,
+            {"entity_id": self._members, ATTR_TILT_POSITION: tilt_position},
+            blocking=True,
+        )
 
     async def _start_cover_move(self, target: int, force: bool = False) -> None:
         self._refresh_estimates()

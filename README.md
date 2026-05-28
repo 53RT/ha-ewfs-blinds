@@ -81,6 +81,9 @@ A group is defined as another `cover` entry with:
 - `is_group: true`
 - `group_members`: list of member `cover` entity IDs
 
+Optional keys:
+- `command_delay` (seconds, default `0`): delay between commands sent to individual member covers. Use this when covers start moving sequentially and drift apart because the first cover is already ahead of the last one by the time the final command is sent.
+
 When a group is controlled, commands are fanned out to all members via Home Assistant
 cover services. This ensures member shutters update their own position/tilt tracking.
 
@@ -141,6 +144,7 @@ cover:
 	name: Downstairs Group
 	unique_id: warema_downstairs_group
 	is_group: true
+	command_delay: 0.5
 	group_members:
 	  - cover.kitchen
 	  - cover.living_room
