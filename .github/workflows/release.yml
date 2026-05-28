@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify manifest.json version matches tag
+        run: |
+          manifest_version=$(jq -r '.version' custom_components/warema_ewfs/manifest.json)
+          tag_version="${{ steps.version.outputs.version }}"
+          if [ "$manifest_version" != "$tag_version" ]; then
+            echo "::error::manifest.json version ($manifest_version) does not match tag ($tag_version)"
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name }}

@@ -1,8 +1,9 @@
-# Warema EWFS Home Assistant Custom Component
+# EWFS Shutter Home Assistant Custom Component
 
-This project provides a custom `cover` platform for Warema EWFS shutters.
+This project provides a custom `cover` platform that supports Warema EWFS shutters.
 It is designed for setups where an ESPHome device already exposes one `button` entity
-per shutter command.
+per shutter command. Or you have another remote that can be triggered by Home Assistant
+to send the respective commands.
 
 Supported commands per shutter:
 - `open` (fully open)
@@ -17,11 +18,6 @@ The integration is time-based (optimistic):
 - configurable time per tilt step (`up` / `down`)
 - `position` and `tilt_position` are tracked and restored by Home Assistant
 
-## Project Structure
-
-- `custom_components/warema_ewfs/cover.py`: Home Assistant cover entities (single + group)
-- `custom_components/warema_ewfs/model.py`: pure timing/position helpers (testable without HA)
-- `custom_components/warema_ewfs/services.yaml`: entity service `send_command`
 
 ## Installation in Home Assistant
 
@@ -60,7 +56,7 @@ Optional keys:
 - `tilt_step_time_up` (seconds per tilt step toward 100%)
 - `tilt_step_time_down` (seconds per tilt step toward 0%)
 - `send_stop_after_move` (default `true`, sends `btn_stop` when a normal up/down move reaches target)
-- `unique_id`
+- `unique_id` (optional, recommended for better entity management)
 
 Behavior note:
 - `send_stop_after_move` is applied only to normal cover movement (`open` / `close` / `set_position`).
@@ -82,7 +78,9 @@ A group is defined as another `cover` entry with:
 - `group_members`: list of member `cover` entity IDs
 
 Optional keys:
-- `command_delay` (seconds, default `0`): delay between commands sent to individual member covers. Use this when covers start moving sequentially and drift apart because the first cover is already ahead of the last one by the time the final command is sent.
+- `command_delay` (seconds, default `0`): delay between commands sent to individual member covers. Use this when covers
+  start moving sequentially and drift apart because the first cover is already ahead of the last one by the time the
+  final command is sent.
 
 When a group is controlled, commands are fanned out to all members via Home Assistant
 cover services. This ensures member shutters update their own position/tilt tracking.
@@ -218,68 +216,6 @@ Supported `command` values: `open`, `close`.
 
 This works on single shutters, fan-out groups, and native remote groups.
 
-## Development
-
-This project uses [uv](https://docs.astral.sh/uv/) for package management and
-[pre-commit](https://pre-commit.com/) for code quality checks.
-
-### Setup
-
-```zsh
-# Install uv (if not already installed)
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone the repo and install all dev dependencies
-uv sync --group dev
-
-# Install pre-commit hooks
-uv run pre-commit install
-```
-
-### Common Commands
-
-```zsh
-# Run tests
-uv run pytest
-
-# Run linter
-uv run ruff check .
-
-# Run formatter
-uv run ruff format .
-
-# Run all pre-commit hooks manually
-uv run pre-commit run --all-files
-
-# Add a dev dependency
-uv add --dev <package>
-```
-
-### Pre-commit Hooks
-
-The following hooks run automatically on every commit:
-
-| Hook | Purpose |
-|---|---|
-| `trailing-whitespace` | Remove trailing whitespace |
-| `end-of-file-fixer` | Ensure files end with a newline |
-| `check-yaml` | Validate YAML syntax (`services.yaml`, etc.) |
-| `check-json` | Validate JSON syntax (`manifest.json`, `hacs.json`, etc.) |
-| `check-added-large-files` | Prevent committing large files |
-| `check-merge-conflict` | Catch merge conflict markers |
-| `debug-statements` | Flag leftover `breakpoint()` / `pdb` calls |
-| `ruff` | Lint Python code (with auto-fix) |
-| `ruff-format` | Format Python code |
-
-Tests (`pytest`) run automatically on `git push` (pre-push stage).
-
-### CI
-
-GitHub Actions runs on every push/PR to `main`:
-- **HACS** — validates HACS compatibility
-- **Hassfest** — validates `manifest.json` and integration structure
-- **Ruff** — linting and format checks
-- **Tests** — runs `pytest`
 
 ## Calibration and Notes
 
@@ -287,3 +223,7 @@ GitHub Actions runs on every push/PR to `main`:
 - Fine-tune tilt using the 7-step model and per-step timing values.
 - Without physical feedback, position is estimated from elapsed time.
 - Manual wall-remote usage can temporarily introduce drift until HA sends a new command.
+
+## Contributing
+
+For development setup, tooling, pre-commit hooks and CI details see [DEVELOPMENT.md](DEVELOPMENT.md).
