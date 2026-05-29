@@ -278,6 +278,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
     _attr_should_poll = False
     _attr_has_entity_name = True
+    _attr_icon = "mdi:blinds-horizontal"
 
     def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
         self.hass = hass
@@ -748,6 +749,7 @@ class WaremaEWFSGroupCover(CoverEntity):
 
     _attr_should_poll = False
     _attr_has_entity_name = True
+    _attr_icon = "mdi:blinds-horizontal"
 
     def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
         self.hass = hass

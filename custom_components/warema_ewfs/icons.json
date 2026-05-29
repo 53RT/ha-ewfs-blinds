@@ -1,4 +1,13 @@
 {
+  "entity": {
+    "cover": {
+      "default": "mdi:blinds-horizontal",
+      "state": {
+        "open": "mdi:blinds-horizontal",
+        "closed": "mdi:blinds-horizontal-closed"
+      }
+    }
+  },
   "services": {
     "send_command": "mdi:remote",
     "simulate_command": "mdi:eye",
