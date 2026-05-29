@@ -11,6 +11,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components.cover import (
+    ATTR_CURRENT_POSITION,
+    ATTR_CURRENT_TILT_POSITION,
     ATTR_POSITION,
     ATTR_TILT_POSITION,
     PLATFORM_SCHEMA,
@@ -375,10 +377,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
     async def async_added_to_hass(self) -> None:
         """Restore previous state if available."""
         if (last_state := await self.async_get_last_state()) is not None:
-            if (position := last_state.attributes.get(ATTR_POSITION)) is not None:
+            if (position := last_state.attributes.get(ATTR_CURRENT_POSITION)) is not None:
                 self._current_cover_position = clamp_percent(float(str(position)))
                 self._known_position = True
-            if (tilt := last_state.attributes.get(ATTR_TILT_POSITION)) is not None:
+            if (tilt := last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)) is not None:
                 self._current_tilt_position = snap_to_tilt_step(int(float(str(tilt))), TILT_STEP_COUNT)
                 self._known_tilt_position = True
 

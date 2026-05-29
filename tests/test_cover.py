@@ -7,6 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from homeassistant.components.cover import ATTR_CURRENT_POSITION, ATTR_CURRENT_TILT_POSITION
 
 from custom_components.warema_ewfs.const import (
     CONF_BTN_CLOSE,
@@ -1156,3 +1157,81 @@ class TestGroupCommandDelay:
     async def test_default_command_delay_is_zero(self):
         cover = _make_group_with_members()
         assert cover._command_delay == DEFAULT_COMMAND_DELAY == 0.0
+
+
+# ===========================================================================
+# State restore after HA restart
+# ===========================================================================
+
+
+def _make_mock_state(position: int | None = None, tilt: int | None = None) -> MagicMock:
+    """Build a fake last_state with the HA cover state attribute names."""
+    state = MagicMock()
+    attrs: dict[str, Any] = {}
+    if position is not None:
+        attrs[ATTR_CURRENT_POSITION] = position
+    if tilt is not None:
+        attrs[ATTR_CURRENT_TILT_POSITION] = tilt
+    state.attributes = attrs
+    return state
+
+
+class TestStateRestore:
+    """Test that position and tilt are correctly restored after a HA restart."""
+
+    @pytest.mark.asyncio
+    async def test_restores_position_from_current_position_attribute(self):
+        cover = _make_cover()
+        cover.async_get_last_state = AsyncMock(return_value=_make_mock_state(position=75))
+
+        await cover.async_added_to_hass()
+
+        assert cover._current_cover_position == 75
+        assert cover._known_position is True
+
+    @pytest.mark.asyncio
+    async def test_restores_tilt_from_current_tilt_position_attribute(self):
+        cover = _make_cover()
+        cover.async_get_last_state = AsyncMock(return_value=_make_mock_state(tilt=50))
+
+        await cover.async_added_to_hass()
+
+        assert cover._current_tilt_position == 50
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_restores_both_position_and_tilt(self):
+        cover = _make_cover()
+        cover.async_get_last_state = AsyncMock(return_value=_make_mock_state(position=33, tilt=67))
+
+        await cover.async_added_to_hass()
+
+        assert cover._current_cover_position == 33
+        assert cover._known_position is True
+        assert cover._current_tilt_position == 67
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_known_position_false_when_no_last_state(self):
+        cover = _make_cover()
+        cover.async_get_last_state = AsyncMock(return_value=None)
+
+        await cover.async_added_to_hass()
+
+        assert cover._known_position is False
+        assert cover._known_tilt_position is False
+
+    @pytest.mark.asyncio
+    async def test_position_not_old_attr_name(self):
+        """Regression: restore must NOT look up the service-call key 'position'."""
+        cover = _make_cover()
+        # Simulate a state that only has the old wrong key "position" (not "current_position")
+        bad_state = MagicMock()
+        bad_state.attributes = {"position": 80, "tilt_position": 50}
+        cover.async_get_last_state = AsyncMock(return_value=bad_state)
+
+        await cover.async_added_to_hass()
+
+        # Should NOT restore - the wrong key must not be picked up
+        assert cover._known_position is False
+        assert cover._known_tilt_position is False
