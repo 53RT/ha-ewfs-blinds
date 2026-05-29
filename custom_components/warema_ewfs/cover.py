@@ -736,8 +736,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self.async_write_ha_state()
 
 
-class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
-    """Group cover that fans out commands to member cover entities."""
+class WaremaEWFSGroupCover(CoverEntity):
+    """Group cover that fans out commands to member cover entities.
+
+    Position and tilt state are intentionally not tracked on the group level because
+    individual member shutters can be moved independently, making group-level state
+    impossible to keep in sync.
+    """
 
     _attr_should_poll = False
     _attr_has_entity_name = True
@@ -750,11 +755,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         self._members: list[str] = []
         self._invalid_members: list[str] = []
         self._command_delay: float = config.get(CONF_COMMAND_DELAY, DEFAULT_COMMAND_DELAY)
-
-        self._current_cover_position: int = 0
-        self._current_tilt_position: int = 0
-        self._known_position = False
-        self._known_tilt_position = False
 
     @property
     def supported_features(self) -> CoverEntityFeature:
@@ -771,23 +771,19 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
 
     @property
     def current_cover_position(self) -> int | None:
-        return self._current_cover_position if self._known_position else None
+        return None
 
     @property
     def current_cover_tilt_position(self) -> int | None:
-        return self._current_tilt_position if self._known_tilt_position else None
+        return None
 
     @property
     def is_closed(self) -> bool | None:
-        if not self._known_position:
-            return None
-        return self._current_cover_position == 0
+        return None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return {
-            ATTR_KNOWN_POSITION: self._known_position,
-            ATTR_KNOWN_TILT_POSITION: self._known_tilt_position,
             "tilt_steps": TILT_STEP_COUNT,
             "integration": DOMAIN,
             "is_group": True,
@@ -798,83 +794,29 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         self._revalidate_group_members(log_warning=True)
-        if (last_state := await self.async_get_last_state()) is not None:
-            if (position := last_state.attributes.get(ATTR_POSITION)) is not None:
-                self._current_cover_position = clamp_percent(float(str(position)))
-                self._known_position = True
-            if (tilt := last_state.attributes.get(ATTR_TILT_POSITION)) is not None:
-                self._current_tilt_position = snap_to_tilt_step(int(float(str(tilt))), TILT_STEP_COUNT)
-                self._known_tilt_position = True
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         await self._fanout("open_cover")
-        self._current_cover_position = 100
-        self._known_position = True
-        self._current_tilt_position = 100
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         await self._fanout("close_cover")
-        self._current_cover_position = 0
-        self._known_position = True
-        self._current_tilt_position = 0
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         target = clamp_percent(float(kwargs[ATTR_POSITION]))
-        inferred_tilt = infer_tilt_after_cover_move(
-            current_position=self._current_cover_position,
-            target_position=target,
-            current_tilt=self._current_tilt_position,
-        )
         await self._fanout("set_cover_position", {ATTR_POSITION: target})
-        self._current_cover_position = target
-        self._known_position = True
-        self._current_tilt_position = inferred_tilt
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         await self._fanout("stop_cover")
 
-    #    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-    #        await self._fanout("open_cover_tilt")
-    #        self._current_tilt_position = 100
-    #        self._known_tilt_position = True
-    #        self.async_write_ha_state()
-    #
-    #    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-    #        await self._fanout("close_cover_tilt")
-    #        self._current_tilt_position = 0
-    #        self._known_tilt_position = True
-    #        self.async_write_ha_state()
-
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
-        next_step = min(current_step + 1, TILT_STEP_COUNT - 1)
-        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
-        await self._fanout("set_cover_tilt_position", {ATTR_TILT_POSITION: target})
-        self._current_tilt_position = target
-        self._known_tilt_position = True
-        self.async_write_ha_state()
+        await self._fanout("open_cover_tilt")
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-        current_step = tilt_percent_to_step(self._current_tilt_position, TILT_STEP_COUNT)
-        next_step = max(current_step - 1, 0)
-        target = tilt_step_to_percent(next_step, TILT_STEP_COUNT)
-        await self._fanout("set_cover_tilt_position", {ATTR_TILT_POSITION: target})
-        self._current_tilt_position = target
-        self._known_tilt_position = True
-        self.async_write_ha_state()
+        await self._fanout("close_cover_tilt")
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         target = snap_to_tilt_step(clamp_percent(float(kwargs[ATTR_TILT_POSITION])), TILT_STEP_COUNT)
         await self._fanout("set_cover_tilt_position", {ATTR_TILT_POSITION: target})
-        self._current_tilt_position = target
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_set_cover_position_and_tilt(
         self,
@@ -890,11 +832,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
                 ATTR_TILT_POSITION: target_tilt,
             },
         )
-        self._current_cover_position = target_position
-        self._known_position = True
-        self._current_tilt_position = target_tilt
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_set_cover_position_and_tilt_step(
         self,
@@ -902,7 +839,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
         tilt_step: int,
     ) -> None:
         target_position = clamp_percent(position)
-        target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
         await self._fanout(
             SERVICE_SET_POSITION_AND_TILT_STEP,
             {
@@ -910,11 +846,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
                 ATTR_TILT_STEP: int(tilt_step),
             },
         )
-        self._current_cover_position = target_position
-        self._known_position = True
-        self._current_tilt_position = target_tilt
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
         await self._fanout("stop_cover_tilt")
@@ -948,13 +879,6 @@ class WaremaEWFSGroupCover(CoverEntity, RestoreEntity):
             {"entity_id": self._members, ATTR_COMMAND: command},
             blocking=True,
         )
-        target = 100 if command == "open" else 0
-        inferred_tilt = 100 if command == "open" else 0
-        self._current_cover_position = target
-        self._known_position = True
-        self._current_tilt_position = inferred_tilt
-        self._known_tilt_position = True
-        self.async_write_ha_state()
 
     async def _fanout(self, service: str, extra: dict[str, Any] | None = None) -> None:
         self._revalidate_group_members()
@@ -1041,8 +965,22 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         )
 
     @property
+    def current_cover_position(self) -> int | None:
+        return None
+
+    @property
+    def current_cover_tilt_position(self) -> int | None:
+        return None
+
+    @property
+    def is_closed(self) -> bool | None:
+        return None
+
+    @property
     def extra_state_attributes(self) -> dict[str, Any]:
         attrs = dict(super().extra_state_attributes)
+        attrs.pop(ATTR_KNOWN_POSITION, None)
+        attrs.pop(ATTR_KNOWN_TILT_POSITION, None)
         attrs.update(
             {
                 "is_group": True,
