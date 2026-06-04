@@ -20,12 +20,14 @@ from custom_components.warema_ewfs.const import (
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
+    CONF_SIMULATE_STOP_DELAY,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
     CONF_TRAVEL_TIME_UP,
     DEFAULT_COMMAND_DELAY,
     DEFAULT_SEND_STOP_AFTER_MOVE,
+    DEFAULT_SIMULATE_STOP_DELAY,
     DEFAULT_TILT_STEP_TIME_DOWN,
     DEFAULT_TILT_STEP_TIME_UP,
     DEFAULT_TRAVEL_TIME_DOWN,
@@ -59,6 +61,7 @@ def _make_config(**overrides: Any) -> dict[str, Any]:
         CONF_TILT_STEP_TIME_UP: DEFAULT_TILT_STEP_TIME_UP,
         CONF_TILT_STEP_TIME_DOWN: DEFAULT_TILT_STEP_TIME_DOWN,
         CONF_SEND_STOP_AFTER_MOVE: DEFAULT_SEND_STOP_AFTER_MOVE,
+        CONF_SIMULATE_STOP_DELAY: DEFAULT_SIMULATE_STOP_DELAY,
     }
     cfg.update(overrides)
     return cfg
@@ -919,6 +922,75 @@ class TestSimulateCommand:
         cover.hass.services.async_call.assert_not_called()
         assert cover._current_tilt_position == 0
 
+    # ------------------------------------------------------------------
+    # Tilt update when simulated move starts (non-zero duration)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_tilt_updated_when_move_finishes(self):
+        """After a simulated close completes, tilt must be set to 0."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._current_tilt_position = 67
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("close")
+        # Simulate the timer firing (cover finished moving)
+        await cover._finish_cover_move()
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_tilt_updated_when_move_finishes(self):
+        """After a simulated open completes, tilt must be set to 100."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._current_tilt_position = 33
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("open")
+        await cover._finish_cover_move()
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    # ------------------------------------------------------------------
+    # Tilt update when cover is already at the target (duration == 0)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_sets_tilt_0_when_already_closed(self):
+        """simulate_command('close') must set tilt to 0 even when position is already 0."""
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._current_tilt_position = 67
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("close")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_sets_tilt_100_when_already_open(self):
+        """simulate_command('open') must set tilt to 100 even when position is already 100."""
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._current_tilt_position = 33
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("open")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
 
 class TestSimulateSetTiltPosition:
     """Test async_simulate_set_tilt_position sets tilt without hardware."""
@@ -1235,3 +1307,265 @@ class TestStateRestore:
         # Should NOT restore - the wrong key must not be picked up
         assert cover._known_position is False
         assert cover._known_tilt_position is False
+
+
+# ===========================================================================
+# simulate_stop_delay - automatic motor-neutralisation after simulated moves
+# ===========================================================================
+
+
+def _make_cover_with_simulate_stop(delay: float, **config_overrides: Any) -> WaremaEWFSCover:
+    """Create a cover with simulate_stop_delay configured and timer infrastructure mocked."""
+    cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: delay, **config_overrides})
+    # Capture the scheduled callback so tests can fire it manually
+    cover._scheduled_simulate_stop_callback: Any = None
+
+    return cover
+
+
+class TestSimulateStopDelay:
+    """Test that a simulated move sends an automatic hardware stop after simulate_stop_delay."""
+
+    # ------------------------------------------------------------------
+    # Configuration helpers
+    # ------------------------------------------------------------------
+
+    def test_default_simulate_stop_delay_is_zero(self):
+        """Feature is off by default."""
+        cover = _make_cover()
+        assert cover._simulate_stop_delay == DEFAULT_SIMULATE_STOP_DELAY == 0.0
+
+    def test_simulate_stop_delay_stored_from_config(self):
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 3.5})
+        assert cover._simulate_stop_delay == pytest.approx(3.5)
+
+    def test_simulate_stop_delay_in_extra_state_attributes(self):
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 4.0})
+        assert cover.extra_state_attributes["simulate_stop_delay"] == pytest.approx(4.0)
+
+    # ------------------------------------------------------------------
+    # No auto-stop when delay is 0 (disabled)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_no_simulate_stop_timer_when_delay_is_zero(self):
+        """When simulate_stop_delay == 0, no timer is scheduled after _finish_cover_move."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 0.0})
+        cover._current_cover_position = 100
+        cover._known_position = True
+        cover._move_is_simulated = True
+        cover._move_start_pos = 100
+        cover._move_target_pos = 0
+        cover._move_direction = "closing"
+        cover._move_started_at = 0.0
+        cover._move_duration = 22.0
+
+        await cover._finish_cover_move()
+
+        assert cover._unsub_simulate_stop_timer is None
+
+    # ------------------------------------------------------------------
+    # Timer is scheduled AFTER _finish_cover_move (not at command time)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_stop_timer_scheduled_after_finish_cover_move(self):
+        """Timer must be scheduled inside _finish_cover_move, not in _simulate_cover_move."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        import custom_components.warema_ewfs.cover as cover_module
+
+        captured: list[Any] = []
+
+        def fake_call_later(hass, delay, action):
+            captured.append((delay, action))
+            return MagicMock()
+
+        original = cover_module.async_call_later
+        cover_module.async_call_later = fake_call_later
+        try:
+            # Step 1: simulate_command schedules only the move-stop timer (NOT the simulate-stop)
+            await cover.async_simulate_command("close")
+            timers_after_command = len(captured)  # should be 1 (move-stop only)
+
+            # Step 2: fire _finish_cover_move - NOW the simulate-stop timer must be added
+            await cover._finish_cover_move()
+            timers_after_finish = len(captured)
+        finally:
+            cover_module.async_call_later = original
+
+        assert timers_after_command == 1, "Only move-stop timer should be scheduled at command time"
+        assert timers_after_finish == 2, "simulate-stop timer must be scheduled after _finish_cover_move"
+        delays = [c[0] for c in captured]
+        assert 2.0 in delays, "simulate_stop_delay (2.0 s) must be among the scheduled delays"
+
+    @pytest.mark.asyncio
+    async def test_simulate_stop_timer_not_scheduled_for_normal_move(self):
+        """Normal (hardware) moves must never schedule the simulate-stop timer."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        import custom_components.warema_ewfs.cover as cover_module
+
+        captured: list[float] = []
+
+        def fake_call_later(hass, delay, action):
+            captured.append(delay)
+            return MagicMock()
+
+        original = cover_module.async_call_later
+        cover_module.async_call_later = fake_call_later
+        try:
+            await cover.async_open_cover()  # normal move
+            await cover._finish_cover_move()  # finish it
+        finally:
+            cover_module.async_call_later = original
+
+        # Only the move-stop timer (travel_time_up) must appear - never the 2.0 s simulate-stop
+        assert 2.0 not in captured
+
+    @pytest.mark.asyncio
+    async def test_simulate_stop_timer_scheduled_when_delay_positive(self):
+        """After _finish_cover_move for a simulated move, the simulate-stop timer appears."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 3.0})
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        import custom_components.warema_ewfs.cover as cover_module
+
+        captured: list[float] = []
+
+        def fake_call_later(hass, delay, action):
+            captured.append(delay)
+            return MagicMock()
+
+        original = cover_module.async_call_later
+        cover_module.async_call_later = fake_call_later
+        try:
+            await cover.async_simulate_command("close")
+            await cover._finish_cover_move()
+        finally:
+            cover_module.async_call_later = original
+
+        assert 3.0 in captured
+
+    # ------------------------------------------------------------------
+    # _auto_stop_simulated_move behaviour (fires AFTER tracking is done)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_auto_stop_sends_hardware_stop_command(self):
+        """_auto_stop_simulated_move sends a real stop command to clear direction lock."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        # Cover is already at rest (tracking finished); only the timer is pending
+        cover._move_direction = None
+
+        await cover._auto_stop_simulated_move()
+
+        assert cover.hass.services.async_call.call_count == 1
+        assert _last_button_pressed(cover) == "button.stop"
+
+    @pytest.mark.asyncio
+    async def test_auto_stop_does_not_change_position_or_tilt(self):
+        """_auto_stop_simulated_move must not alter position/tilt - tracking is already done."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cover._current_cover_position = 0
+        cover._current_tilt_position = 0
+        cover._known_position = True
+        cover._known_tilt_position = True
+        cover._move_direction = None  # tracking already finished
+
+        await cover._auto_stop_simulated_move()
+
+        assert cover._current_cover_position == 0
+        assert cover._current_tilt_position == 0
+
+    @pytest.mark.asyncio
+    async def test_auto_stop_clears_timer_ref(self):
+        """_auto_stop_simulated_move clears the timer reference."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cover._unsub_simulate_stop_timer = MagicMock()  # simulate pending timer
+        cover._move_direction = None
+
+        await cover._auto_stop_simulated_move()
+
+        assert cover._unsub_simulate_stop_timer is None
+
+    # ------------------------------------------------------------------
+    # Timer cancellation
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tracking_cancels_simulate_stop_timer(self):
+        """Stopping tracking explicitly cancels any pending simulate-stop timer."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cancel_mock = MagicMock()
+        cover._unsub_simulate_stop_timer = cancel_mock
+
+        cover._stop_cover_tracking()
+
+        cancel_mock.assert_called_once()
+        assert cover._unsub_simulate_stop_timer is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_stop_timer_cancelled_when_normal_move_starts(self):
+        """A new normal move cancels any pending simulate-stop timer."""
+        cover = _make_cover(**{CONF_SIMULATE_STOP_DELAY: 2.0})
+        cover._current_cover_position = 0
+        cover._known_position = True
+        cancel_mock = MagicMock()
+        cover._unsub_simulate_stop_timer = cancel_mock
+
+        # Starting a real/normal move should cancel the old simulate-stop timer
+        await cover._start_cover_move(100)
+
+        cancel_mock.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_simulate_stop_full_delay_used_no_cap(self):
+        """simulate_stop_delay is used in full - there is no cap at move duration."""
+        cover = _make_cover(
+            **{
+                CONF_SIMULATE_STOP_DELAY: 5.0,
+                CONF_TRAVEL_TIME_DOWN: 3.0,  # move duration shorter than delay
+            }
+        )
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        import custom_components.warema_ewfs.cover as cover_module
+
+        captured: list[float] = []
+
+        def fake_call_later(hass, delay, action):
+            captured.append(delay)
+            return MagicMock()
+
+        original = cover_module.async_call_later
+        cover_module.async_call_later = fake_call_later
+        try:
+            await cover.async_simulate_command("close")
+            await cover._finish_cover_move()
+        finally:
+            cover_module.async_call_later = original
+
+        # simulate_stop timer must use the full 5.0 s - no cap at 3.0 s
+        assert 5.0 in captured
+        assert 3.0 not in [d for d in captured if d == 5.0]  # 3.0 is only the move timer
+
+    @pytest.mark.asyncio
+    async def test_move_is_simulated_flag_set_by_simulate_cover_move(self):
+        """_move_is_simulated must be True after _simulate_cover_move and False after normal move."""
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover._simulate_cover_move(100)
+        assert cover._move_is_simulated is True
+
+        # Starting a real move must clear the flag
+        await cover._start_cover_move(0)
+        assert cover._move_is_simulated is False

@@ -42,6 +42,7 @@ from .const import (
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
+    CONF_SIMULATE_STOP_DELAY,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
@@ -49,6 +50,7 @@ from .const import (
     DEFAULT_COMMAND_DELAY,
     DEFAULT_NAME,
     DEFAULT_SEND_STOP_AFTER_MOVE,
+    DEFAULT_SIMULATE_STOP_DELAY,
     DEFAULT_TILT_STEP_TIME_DOWN,
     DEFAULT_TILT_STEP_TIME_UP,
     DEFAULT_TRAVEL_TIME_DOWN,
@@ -98,6 +100,9 @@ SINGLE_SHUTTER_SCHEMA = {
         vol.Coerce(float), vol.Range(min=0.01, max=60)
     ),
     vol.Optional(CONF_SEND_STOP_AFTER_MOVE, default=DEFAULT_SEND_STOP_AFTER_MOVE): cv.boolean,
+    vol.Optional(CONF_SIMULATE_STOP_DELAY, default=DEFAULT_SIMULATE_STOP_DELAY): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=60)
+    ),
 }
 
 GROUP_SCHEMA = {
@@ -127,6 +132,9 @@ NATIVE_GROUP_SCHEMA = {
         vol.Coerce(float), vol.Range(min=0.01, max=60)
     ),
     vol.Optional(CONF_SEND_STOP_AFTER_MOVE, default=DEFAULT_SEND_STOP_AFTER_MOVE): cv.boolean,
+    vol.Optional(CONF_SIMULATE_STOP_DELAY, default=DEFAULT_SIMULATE_STOP_DELAY): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=60)
+    ),
 }
 
 
@@ -159,6 +167,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_TILT_STEP_TIME_DOWN): vol.Coerce(float),
         vol.Optional(CONF_SEND_STOP_AFTER_MOVE): cv.boolean,
         vol.Optional(CONF_COMMAND_DELAY): vol.Coerce(float),
+        vol.Optional(CONF_SIMULATE_STOP_DELAY): vol.Coerce(float),
     }
 )
 PLATFORM_SCHEMA = vol.All(PLATFORM_SCHEMA, _validate_platform_config)
@@ -210,6 +219,7 @@ async def async_setup_entry(
     config.setdefault(CONF_TILT_STEP_TIME_DOWN, DEFAULT_TILT_STEP_TIME_DOWN)
     config.setdefault(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE)
     config.setdefault(CONF_COMMAND_DELAY, DEFAULT_COMMAND_DELAY)
+    config.setdefault(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
     config[CONF_UNIQUE_ID] = entry.entry_id
     _setup_cover_entity(hass, config, async_add_entities)
 
@@ -290,6 +300,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._tilt_step_time_up: float = config[CONF_TILT_STEP_TIME_UP]
         self._tilt_step_time_down: float = config[CONF_TILT_STEP_TIME_DOWN]
         self._send_stop_after_move: bool = config[CONF_SEND_STOP_AFTER_MOVE]
+        self._simulate_stop_delay: float = config.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
 
         self._commands: dict[str, str] = {
             "open": config[CONF_BTN_OPEN],
@@ -319,6 +330,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._unsub_move_timer: Callable[[], None] | None = None
         self._unsub_tilt_timer: Callable[[], None] | None = None
         self._unsub_interval: Callable[[], None] | None = None
+        self._unsub_simulate_stop_timer: Callable[[], None] | None = None
+        # True while a move was initiated via _simulate_cover_move (no hardware command sent).
+        # Used in _finish_cover_move to decide whether to schedule the simulate-stop timer.
+        self._move_is_simulated: bool = False
 
     @property
     def supported_features(self) -> CoverEntityFeature:
@@ -373,6 +388,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             "travel_time_down": self._travel_time_down,
             "tilt_step_time_up": self._tilt_step_time_up,
             "tilt_step_time_down": self._tilt_step_time_down,
+            "simulate_stop_delay": self._simulate_stop_delay,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -536,6 +552,17 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             self._travel_time_down,
         )
         if duration <= 0:
+            # Even when the cover is already at the target position, the tilt must be
+            # updated: a close command leaves slats vertical (0), an open command
+            # leaves slats horizontal (100).
+            if target <= 0:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+                self.async_write_ha_state()
+            elif target >= 100:
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+                self.async_write_ha_state()
             return
 
         direction = "open" if target > self._current_cover_position else "close"
@@ -544,6 +571,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_duration = duration
         self._move_start_pos = self._current_cover_position
         self._move_target_pos = target
+        self._move_is_simulated = True
 
         self._schedule_cover_stop(duration)
         self._ensure_interval_listener()
@@ -581,6 +609,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
     async def _start_cover_move(self, target: int, force: bool = False) -> None:
         self._refresh_estimates()
+        self._move_is_simulated = False  # always a hardware-commanded move
         target = clamp_percent(target)
         duration = compute_cover_duration(
             self._current_cover_position,
@@ -640,6 +669,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
     def _schedule_cover_stop(self, duration: float) -> None:
         if self._unsub_move_timer:
             self._unsub_move_timer()
+        # Cancel any pending simulate-stop timer - a new movement is being scheduled
+        if self._unsub_simulate_stop_timer:
+            self._unsub_simulate_stop_timer()
+            self._unsub_simulate_stop_timer = None
 
         @callback
         def _on_cover_timer(_: Any) -> None:
@@ -657,6 +690,37 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
         self._unsub_tilt_timer = async_call_later(self.hass, duration, _on_tilt_timer)
 
+    def _schedule_simulate_stop(self, delay: float) -> None:
+        """Schedule an automatic hardware stop after the tracked simulated move has completed.
+
+        This is used to put the motor back into a neutral (direction-unlocked) state
+        after a human has triggered a move via the physical remote.  Without a stop
+        the motor keeps the last direction locked, requiring a double-press to reverse.
+        The timer starts *after* the cover's tracking has finished (position reached),
+        so the delay represents the time to wait after the cover has physically stopped
+        before the neutralising stop is sent.
+        """
+        if self._unsub_simulate_stop_timer:
+            self._unsub_simulate_stop_timer()
+
+        @callback
+        def _on_simulate_stop_timer(_: Any) -> None:
+            self.hass.async_create_task(self._auto_stop_simulated_move())
+
+        self._unsub_simulate_stop_timer = async_call_later(self.hass, delay, _on_simulate_stop_timer)
+
+    async def _auto_stop_simulated_move(self) -> None:
+        """Send a hardware stop to neutralise the motor's direction lock.
+
+        Called by the simulate-stop timer *after* the cover has already reached its
+        tracked target position (i.e. after _finish_cover_move ran).  The cover is
+        not moving anymore from the integration's perspective; this stop merely clears
+        the hardware direction lock so the motor accepts commands in either direction.
+        """
+        self._unsub_simulate_stop_timer = None
+        await self._send_command("stop")
+        self.async_write_ha_state()
+
     async def _finish_cover_move(self) -> None:
         inferred_tilt = infer_tilt_after_cover_move(
             current_position=self._move_start_pos,
@@ -667,9 +731,14 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._known_position = True
         self._current_tilt_position = inferred_tilt
         self._known_tilt_position = True
+        was_simulated = self._move_is_simulated
         self._stop_cover_tracking()
         if should_send_auto_stop(self._send_stop_after_move, is_tilt_move=False):
             await self._send_command("stop")
+        # For simulated moves, schedule the neutralising stop AFTER the cover has
+        # finished its tracked movement (i.e. now), not at command-receive time.
+        if was_simulated and self._simulate_stop_delay > 0:
+            self._schedule_simulate_stop(self._simulate_stop_delay)
         self.async_write_ha_state()
 
     async def _finish_tilt_move(self) -> None:
@@ -698,9 +767,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_direction = None
         self._move_started_at = None
         self._move_duration = 0.0
+        self._move_is_simulated = False
         if self._unsub_move_timer:
             self._unsub_move_timer()
             self._unsub_move_timer = None
+        if self._unsub_simulate_stop_timer:
+            self._unsub_simulate_stop_timer()
+            self._unsub_simulate_stop_timer = None
         self._cleanup_interval_listener()
 
     def _stop_tilt_tracking(self) -> None:

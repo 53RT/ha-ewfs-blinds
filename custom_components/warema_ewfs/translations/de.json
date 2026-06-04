@@ -22,7 +22,11 @@
           "travel_time_down": "Fahrzeit abwärts (s)",
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
-          "send_stop_after_move": "Stopp nach Fahrt senden"
+          "send_stop_after_move": "Stopp nach Fahrt senden",
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
         }
       },
       "group": {
@@ -49,7 +53,11 @@
           "travel_time_down": "Fahrzeit abwärts (s)",
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
-          "send_stop_after_move": "Stopp nach Fahrt senden"
+          "send_stop_after_move": "Stopp nach Fahrt senden",
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
         }
       }
     },
@@ -72,7 +80,11 @@
           "travel_time_down": "Fahrzeit abwärts (s)",
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
-          "send_stop_after_move": "Stopp nach Fahrt senden"
+          "send_stop_after_move": "Stopp nach Fahrt senden",
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
         }
       },
       "group": {
@@ -97,7 +109,11 @@
           "travel_time_down": "Fahrzeit abwärts (s)",
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
-          "send_stop_after_move": "Stopp nach Fahrt senden"
+          "send_stop_after_move": "Stopp nach Fahrt senden",
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
         }
       }
     }

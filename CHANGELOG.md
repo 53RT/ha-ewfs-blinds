@@ -5,7 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.2] - 2026-05-29
+## [0.1.3] - 2026-06-04
+
+### Fixed
+
+- **Simulated move did not update tilt when cover was already at the target position.**
+  When `simulate_command("close")` was called on a cover already at position `0`, or
+  `simulate_command("open")` was called on a cover already at `100`, the early return
+  in `_simulate_cover_move` skipped the tilt update entirely.  The slats now correctly
+  reflect vertical (`0%`) after a close and horizontal (`100%`) after an open, even
+  when no physical movement is needed.
+
+### Added
+
+- **`simulate_stop_delay` config option** (default `0.0` s, i.e. disabled).
+  When set to a positive value, the integration automatically sends a real hardware
+  `stop` command this many seconds **after the cover has finished its tracked movement**
+  (i.e. after `_finish_cover_move` runs), not at the time the command is received.
+  This solves a hardware limitation of WAREMA motors: after moving in one direction
+  without a stop, the motor is direction-locked and needs either a stop or a
+  double-press of the opposite direction before it can reverse.  When a human uses the
+  physical remote (and the ESPHome automation calls `simulate_command`), no stop is
+  sent automatically; this option bridges that gap.
+  - The timer starts only for *simulated* moves (`simulate_command`) — normal
+    hardware-commanded moves are unaffected.
+  - The delay runs from the moment the integration's tracking says the cover has
+    reached its target, giving the motor time to physically come to rest before the
+    neutralising stop is sent.
+  - The timer is cancelled automatically if the cover stops for any other reason
+    (explicit stop command, new move started).
+  - The `simulate_stop_delay` value is exposed as a state attribute for easy inspection.
+
 
 ### Fixed
 
