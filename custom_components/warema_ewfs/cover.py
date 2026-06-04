@@ -536,6 +536,17 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             self._travel_time_down,
         )
         if duration <= 0:
+            # Even when the cover is already at the target position, the tilt must be
+            # updated: a close command leaves slats vertical (0), an open command
+            # leaves slats horizontal (100).
+            if target <= 0:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+                self.async_write_ha_state()
+            elif target >= 100:
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+                self.async_write_ha_state()
             return
 
         direction = "open" if target > self._current_cover_position else "close"

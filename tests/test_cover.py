@@ -919,6 +919,75 @@ class TestSimulateCommand:
         cover.hass.services.async_call.assert_not_called()
         assert cover._current_tilt_position == 0
 
+    # ------------------------------------------------------------------
+    # Tilt update when simulated move starts (non-zero duration)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_tilt_updated_when_move_finishes(self):
+        """After a simulated close completes, tilt must be set to 0."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._current_tilt_position = 67
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("close")
+        # Simulate the timer firing (cover finished moving)
+        await cover._finish_cover_move()
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_tilt_updated_when_move_finishes(self):
+        """After a simulated open completes, tilt must be set to 100."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._current_tilt_position = 33
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("open")
+        await cover._finish_cover_move()
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    # ------------------------------------------------------------------
+    # Tilt update when cover is already at the target (duration == 0)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_sets_tilt_0_when_already_closed(self):
+        """simulate_command('close') must set tilt to 0 even when position is already 0."""
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._current_tilt_position = 67
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("close")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_sets_tilt_100_when_already_open(self):
+        """simulate_command('open') must set tilt to 100 even when position is already 100."""
+        cover = _make_cover()
+        cover._current_cover_position = 100
+        cover._current_tilt_position = 33
+        cover._known_position = True
+        cover._known_tilt_position = True
+
+        await cover.async_simulate_command("open")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
 
 class TestSimulateSetTiltPosition:
     """Test async_simulate_set_tilt_position sets tilt without hardware."""
