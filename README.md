@@ -58,12 +58,42 @@ Optional keys:
 - `tilt_step_time_up` (seconds per tilt step toward 100%)
 - `tilt_step_time_down` (seconds per tilt step toward 0%)
 - `send_stop_after_move` (default `true`, sends `btn_stop` when a normal up/down move reaches target)
+- `simulate_stop_delay` (default `0.0` = disabled, seconds after which a hardware `stop` is automatically sent following a `simulate_command` open/close)
 - `unique_id` (optional, recommended for better entity management)
 
 Behavior note:
 - `send_stop_after_move` is applied only to normal cover movement (`open` / `close` / `set_position`).
 - Tilt movement completion never sends an automatic stop command.
 - Tilt is applied by repeating `tilt_up`/`tilt_down` commands per step (about 16 degrees per command).
+
+### Physical remote & motor direction lock
+
+WAREMA motors have a direction lock: after moving in one direction without a stop command,
+the motor requires either a stop or a double-press of the opposite direction before it can reverse.
+
+When a human presses the physical remote, a single button press causes the cover to travel
+**all the way** to the fully open or fully closed position — it does **not** stop when the button
+is released.  The cover only stops when it reaches the end position or when the user explicitly
+presses the stop button on the remote.
+
+When **this integration** controls the cover it always ends movements with a stop, leaving the
+motor in a neutral state.  When a **human uses the physical remote without pressing stop**,
+the motor remains direction-locked after the cover finishes moving.  If an ESPHome automation
+then calls `simulate_command`, the tracked state is updated but no stop is sent, so the
+direction lock persists.
+
+Use `simulate_stop_delay` to work around this: after the integration's position
+tracking has finished (the cover is considered to have reached its target), a real
+hardware stop is sent after the configured delay.  The delay compensates for any
+difference between when the integration's timer expires and when the motor actually
+comes to a physical standstill.
+
+```yaml
+simulate_stop_delay: 3.0   # send stop 3 s after tracking says the cover has stopped
+```
+
+> **Tip:** Set the delay to a small value (e.g. 1–3 s) to account for any lag between
+> the integration's tracking end and the motor physically stopping.
 
 Combined move behavior:
 - The service `cover.set_cover_position_and_tilt` first moves to the target cover position.
@@ -123,6 +153,7 @@ cover:
 	tilt_step_time_up: 0.35
 	tilt_step_time_down: 0.45
 	send_stop_after_move: true
+	simulate_stop_delay: 3.0
 
   - platform: warema_ewfs
 	name: Living Room
@@ -139,6 +170,7 @@ cover:
 	tilt_step_time_up: 0.30
 	tilt_step_time_down: 0.35
 	send_stop_after_move: true
+	simulate_stop_delay: 3.0
 
   - platform: warema_ewfs
 	name: Downstairs Group

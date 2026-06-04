@@ -22,7 +22,11 @@
           "travel_time_down": "Travel time down (s)",
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
-          "send_stop_after_move": "Send stop after move"
+          "send_stop_after_move": "Send stop after move",
+          "simulate_stop_delay": "Simulate stop delay (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
         }
       },
       "group": {
@@ -49,7 +53,11 @@
           "travel_time_down": "Travel time down (s)",
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
-          "send_stop_after_move": "Send stop after move"
+          "send_stop_after_move": "Send stop after move",
+          "simulate_stop_delay": "Simulate stop delay (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
         }
       }
     },
@@ -72,7 +80,11 @@
           "travel_time_down": "Travel time down (s)",
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
-          "send_stop_after_move": "Send stop after move"
+          "send_stop_after_move": "Send stop after move",
+          "simulate_stop_delay": "Simulate stop delay (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
         }
       },
       "group": {
@@ -97,7 +109,11 @@
           "travel_time_down": "Travel time down (s)",
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
-          "send_stop_after_move": "Send stop after move"
+          "send_stop_after_move": "Send stop after move",
+          "simulate_stop_delay": "Simulate stop delay (s)"
+        },
+        "data_description": {
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
         }
       }
     }
