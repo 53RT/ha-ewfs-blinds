@@ -33,6 +33,7 @@ from .const import (
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
     CONF_SIMULATE_STOP_DELAY,
+    CONF_TILT_STEP_COUNT,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
@@ -41,6 +42,7 @@ from .const import (
     DEFAULT_END_STOP_BUFFER,
     DEFAULT_SEND_STOP_AFTER_MOVE,
     DEFAULT_SIMULATE_STOP_DELAY,
+    DEFAULT_TILT_STEP_COUNT,
     DEFAULT_TILT_STEP_TIME_DOWN,
     DEFAULT_TILT_STEP_TIME_UP,
     DEFAULT_TRAVEL_TIME_DOWN,
@@ -68,6 +70,10 @@ def _time_selector(min_val: float = 0.01, max_val: float = 600) -> NumberSelecto
     )
 
 
+def _step_count_selector() -> NumberSelector:
+    return NumberSelector(NumberSelectorConfig(min=2, max=20, step=1, mode=NumberSelectorMode.BOX))
+
+
 def _single_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     d = defaults or {}
     return vol.Schema(
@@ -79,33 +85,29 @@ def _single_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             vol.Required(CONF_BTN_TILT_UP, default=d.get(CONF_BTN_TILT_UP, "")): _BUTTON_SELECTOR,
             vol.Required(CONF_BTN_TILT_DOWN, default=d.get(CONF_BTN_TILT_DOWN, "")): _BUTTON_SELECTOR,
             vol.Optional(
-                CONF_TRAVEL_TIME_UP,
-                default=d.get(CONF_TRAVEL_TIME_UP, DEFAULT_TRAVEL_TIME_UP),
+                CONF_TRAVEL_TIME_UP, default=d.get(CONF_TRAVEL_TIME_UP, DEFAULT_TRAVEL_TIME_UP)
             ): _time_selector(),
             vol.Optional(
-                CONF_TRAVEL_TIME_DOWN,
-                default=d.get(CONF_TRAVEL_TIME_DOWN, DEFAULT_TRAVEL_TIME_DOWN),
+                CONF_TRAVEL_TIME_DOWN, default=d.get(CONF_TRAVEL_TIME_DOWN, DEFAULT_TRAVEL_TIME_DOWN)
             ): _time_selector(),
             vol.Optional(
-                CONF_TILT_STEP_TIME_UP,
-                default=d.get(CONF_TILT_STEP_TIME_UP, DEFAULT_TILT_STEP_TIME_UP),
+                CONF_TILT_STEP_TIME_UP, default=d.get(CONF_TILT_STEP_TIME_UP, DEFAULT_TILT_STEP_TIME_UP)
             ): _time_selector(min_val=0.01, max_val=60),
             vol.Optional(
-                CONF_TILT_STEP_TIME_DOWN,
-                default=d.get(CONF_TILT_STEP_TIME_DOWN, DEFAULT_TILT_STEP_TIME_DOWN),
+                CONF_TILT_STEP_TIME_DOWN, default=d.get(CONF_TILT_STEP_TIME_DOWN, DEFAULT_TILT_STEP_TIME_DOWN)
             ): _time_selector(min_val=0.01, max_val=60),
             vol.Optional(
-                CONF_SEND_STOP_AFTER_MOVE,
-                default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE),
+                CONF_SEND_STOP_AFTER_MOVE, default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE)
             ): BooleanSelector(),
             vol.Optional(
-                CONF_SIMULATE_STOP_DELAY,
-                default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY),
+                CONF_SIMULATE_STOP_DELAY, default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
             ): _time_selector(min_val=0, max_val=60),
             vol.Optional(
-                CONF_END_STOP_BUFFER,
-                default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER),
+                CONF_END_STOP_BUFFER, default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER)
             ): _time_selector(min_val=0, max_val=60),
+            vol.Optional(
+                CONF_TILT_STEP_COUNT, default=d.get(CONF_TILT_STEP_COUNT, DEFAULT_TILT_STEP_COUNT)
+            ): _step_count_selector(),
         }
     )
 
@@ -158,17 +160,17 @@ def _native_group_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 default=d.get(CONF_TILT_STEP_TIME_DOWN, DEFAULT_TILT_STEP_TIME_DOWN),
             ): _time_selector(min_val=0.01, max_val=60),
             vol.Optional(
-                CONF_SEND_STOP_AFTER_MOVE,
-                default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE),
+                CONF_SEND_STOP_AFTER_MOVE, default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE)
             ): BooleanSelector(),
             vol.Optional(
-                CONF_SIMULATE_STOP_DELAY,
-                default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY),
+                CONF_SIMULATE_STOP_DELAY, default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
             ): _time_selector(min_val=0, max_val=60),
             vol.Optional(
-                CONF_END_STOP_BUFFER,
-                default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER),
+                CONF_END_STOP_BUFFER, default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER)
             ): _time_selector(min_val=0, max_val=60),
+            vol.Optional(
+                CONF_TILT_STEP_COUNT, default=d.get(CONF_TILT_STEP_COUNT, DEFAULT_TILT_STEP_COUNT)
+            ): _step_count_selector(),
         }
     )
 

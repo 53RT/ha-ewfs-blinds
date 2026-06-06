@@ -11,8 +11,7 @@ DEFAULT_SEND_STOP_AFTER_MOVE = True
 DEFAULT_COMMAND_DELAY = 0.0
 DEFAULT_SIMULATE_STOP_DELAY = 0.0
 DEFAULT_END_STOP_BUFFER = 0.0
-
-TILT_STEP_COUNT = 7
+DEFAULT_TILT_STEP_COUNT = 7
 
 CONF_IS_GROUP = "is_group"
 CONF_IS_NATIVE_GROUP = "is_native_group"
@@ -26,7 +25,11 @@ CONF_SEND_STOP_AFTER_MOVE = "send_stop_after_move"
 CONF_COMMAND_DELAY = "command_delay"
 CONF_SIMULATE_STOP_DELAY = "simulate_stop_delay"
 CONF_END_STOP_BUFFER = "end_stop_buffer"
+CONF_TILT_STEP_COUNT = "tilt_step_count"
 
+TILT_STEP_COUNT = 7  # kept for backward compat / group cover fallback
+
+DEFAULT_TILT_STEP_COUNT = 7
 CONF_BTN_OPEN = "btn_open"
 CONF_BTN_CLOSE = "btn_close"
 CONF_BTN_STOP = "btn_stop"

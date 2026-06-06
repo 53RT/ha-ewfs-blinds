@@ -21,6 +21,7 @@ from custom_components.warema_ewfs.const import (
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
     CONF_SIMULATE_STOP_DELAY,
+    CONF_TILT_STEP_COUNT,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
@@ -28,6 +29,7 @@ from custom_components.warema_ewfs.const import (
     DEFAULT_COMMAND_DELAY,
     DEFAULT_SEND_STOP_AFTER_MOVE,
     DEFAULT_SIMULATE_STOP_DELAY,
+    DEFAULT_TILT_STEP_COUNT,
     DEFAULT_TILT_STEP_TIME_DOWN,
     DEFAULT_TILT_STEP_TIME_UP,
     DEFAULT_TRAVEL_TIME_DOWN,
@@ -62,6 +64,7 @@ def _make_config(**overrides: Any) -> dict[str, Any]:
         CONF_TILT_STEP_TIME_DOWN: DEFAULT_TILT_STEP_TIME_DOWN,
         CONF_SEND_STOP_AFTER_MOVE: DEFAULT_SEND_STOP_AFTER_MOVE,
         CONF_SIMULATE_STOP_DELAY: DEFAULT_SIMULATE_STOP_DELAY,
+        CONF_TILT_STEP_COUNT: DEFAULT_TILT_STEP_COUNT,
     }
     cfg.update(overrides)
     return cfg
@@ -1569,3 +1572,109 @@ class TestSimulateStopDelay:
         # Starting a real move must clear the flag
         await cover._start_cover_move(0)
         assert cover._move_is_simulated is False
+
+
+# ===========================================================================
+# Configurable tilt step count
+# ===========================================================================
+
+
+class TestTiltStepCount:
+    """Test that tilt step count is configurable and affects all tilt operations."""
+
+    def test_default_tilt_step_count_is_7(self):
+        cover = _make_cover()
+        assert cover._tilt_step_count == 7
+        assert cover.extra_state_attributes["tilt_steps"] == 7
+
+    def test_custom_tilt_step_count_is_stored(self):
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        assert cover._tilt_step_count == 5
+        assert cover.extra_state_attributes["tilt_steps"] == 5
+
+    def test_tilt_steps_attribute_reflects_custom_count(self):
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 3})
+        assert cover.extra_state_attributes["tilt_steps"] == 3
+
+    @pytest.mark.asyncio
+    async def test_open_tilt_increments_one_step_with_5_steps(self):
+        """With 5 steps the valid percents are 0, 25, 50, 75, 100."""
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        cover._current_tilt_position = 0
+        cover._known_tilt_position = True
+
+        await cover.async_open_cover_tilt()
+
+        # One step up from 0 with 5 steps → step 1 → 25 %
+        assert _last_button_pressed(cover) == "button.tilt_up"
+        assert cover._current_tilt_position == 25
+
+    @pytest.mark.asyncio
+    async def test_close_tilt_decrements_one_step_with_5_steps(self):
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        cover._current_tilt_position = 100
+        cover._known_tilt_position = True
+
+        await cover.async_close_cover_tilt()
+
+        # One step down from 100 with 5 steps → step 3 → 75 %
+        assert _last_button_pressed(cover) == "button.tilt_down"
+        assert cover._current_tilt_position == 75
+
+    @pytest.mark.asyncio
+    async def test_set_tilt_position_snaps_to_5_step_grid(self):
+        """Setting 40 % with 5 steps should snap to 50 % (nearest of 0,25,50,75,100)."""
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        cover._current_tilt_position = 0
+        cover._known_tilt_position = True
+
+        from homeassistant.components.cover import ATTR_TILT_POSITION
+
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 40})
+
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_set_tilt_position_snaps_to_3_step_grid(self):
+        """With 3 steps the valid percents are 0, 50, 100.
+        70 % is closer to 50 % (distance 20) than to 100 % (distance 30)."""
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 3})
+        cover._current_tilt_position = 0
+        cover._known_tilt_position = True
+
+        from homeassistant.components.cover import ATTR_TILT_POSITION
+
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 70})
+
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_open_tilt_does_not_exceed_max_step_with_5_steps(self):
+        """Opening tilt from 100 % (max step) should send no command."""
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        cover._current_tilt_position = 100
+        cover._known_tilt_position = True
+        cover.hass.services.async_call.reset_mock()
+
+        await cover.async_open_cover_tilt()
+
+        cover.hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_move_uses_custom_step_count(self):
+        """simulate_tilt_move should advance by one step of the configured count."""
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        cover._current_tilt_position = 0
+        cover._known_tilt_position = True
+
+        await cover._simulate_tilt_move(100)
+
+        # With 5 steps one step up from 0 → 25 %
+        assert cover._current_tilt_position == 25
+
+    @pytest.mark.asyncio
+    async def test_simulate_set_tilt_position_snaps_with_custom_count(self):
+        cover = _make_cover(**{CONF_TILT_STEP_COUNT: 5})
+        await cover.async_simulate_set_tilt_position(tilt_position=60)
+        # Nearest 5-step value to 60 % is 50 %
+        assert cover._current_tilt_position == 50
