@@ -1,0 +1,25 @@
+# TODOs
+
+- [x] Set slates to 0 or 100 after closing or opening, respectively (currently they remain at the last position, which can be confusing)
+- [x] listen on 433MHz Band for other remotes sending commands and update position/tilt accordingly (currently only commands sent via HA are tracked)
+- [x] test groups in reality and add documentation
+- [x] stop timing and update config in Home-Assistant
+- [x] fix service calls
+- [x] test the force service call and add documentation
+- [x] check if the tilt commands send the stop as well. They shouldnt
+- [x] native groups should update state of all members, not just the one that was called (currently only the called entity is updated, which can lead to inconsistencies in the UI)
+- [x] other groups should wait longer between stop calls to ensure the device has time to react (currently the delay is too short, which is not the same as with the up/down commands)
+- [x] add overwrite mode to shutters
+- [x] rename integration
+- [ ] write more tests
+- [ ] pre-commit hook to check for code style and run tests
+- [x] hacs.json
+  - [ ] https://www.hacs.xyz/docs/publish/start/#general-requirements
+- [x] Changelog
+- [x] README – Config Flow section corrected (flow was already implemented)
+- [x] LICENSE
+- [x] Translations
+- [ ] encode commands in a more compact way (currently the commands are sent as JSON, which is not very efficient)
+- [ ] separate store of the commands from the actual sending of the commands (currently they are tightly coupled, which makes it harder to implement features like command queuing or retrying)
+- [x] if the down or up command is simulated. The tilt needs to be adjusted too
+- [ ] if a remote command was detected its often missing the stop command, which can lead to the device needs two opposite commands to go into the opposite direction. This can be fixed by sending a stop command after a certain time if no new command was detected (currently the stop command is only sent when a new command is detected, which can lead to inconsistencies in the device state)
