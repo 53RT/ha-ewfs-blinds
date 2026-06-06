@@ -343,14 +343,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_start_pos: int = 0
         self._move_target_pos: int = 0
 
-        self._tilt_direction: str | None = None
-        self._tilt_started_at: float | None = None
-        self._tilt_duration: float = 0.0
-        self._tilt_start_pos: int = 0
-        self._tilt_target_pos: int = 0
-
         self._unsub_move_timer: Callable[[], None] | None = None
-        self._unsub_tilt_timer: Callable[[], None] | None = None
         self._unsub_interval: Callable[[], None] | None = None
         self._unsub_simulate_stop_timer: Callable[[], None] | None = None
         # True while a move was initiated via _simulate_cover_move (no hardware command sent).
@@ -456,14 +449,6 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         await self._send_command("stop")
         self._stop_cover_tracking()
         self.async_write_ha_state()
-
-    #    async def async_open_cover_tilt(self, **kwargs: Any) -> None:
-    #        self._known_tilt_position = True
-    #        await self._start_tilt_move(100)
-
-    #    async def async_close_cover_tilt(self, **kwargs: Any) -> None:
-    #        self._known_tilt_position = True
-    #        await self._start_tilt_move(0)
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._known_tilt_position = True
@@ -596,9 +581,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_target_pos = target
         self._move_is_simulated = True
 
-        timer_duration = (
-            duration + self._end_stop_buffer if target in (0, 100) and self._end_stop_buffer > 0 else duration
-        )
+        timer_duration = self._end_stop_timer_duration(duration, target)
         self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
@@ -659,15 +642,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_start_pos = self._current_cover_position
         self._move_target_pos = target
 
-        # Add the end-stop buffer only to the stop timer, not to _move_duration.
-        # Keeping _move_duration = travel_time ensures position interpolation is
-        # accurate throughout the journey (e.g. stop at 11 s of a 22 s travel → 50 %).
-        # During the buffer window position is capped at _move_target_pos because
-        # elapsed is clamped to _move_duration; the cover should already be at or
-        # within a few percent of the physical end-stop at that point.
-        timer_duration = (
-            duration + self._end_stop_buffer if target in (0, 100) and self._end_stop_buffer > 0 else duration
-        )
+        timer_duration = self._end_stop_timer_duration(duration, target)
         self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
@@ -714,16 +689,6 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             self.hass.async_create_task(self._finish_cover_move())
 
         self._unsub_move_timer = async_call_later(self.hass, duration, _on_cover_timer)
-
-    def _schedule_tilt_stop(self, duration: float) -> None:
-        if self._unsub_tilt_timer:
-            self._unsub_tilt_timer()
-
-        @callback
-        def _on_tilt_timer(_: Any) -> None:
-            self.hass.async_create_task(self._finish_tilt_move())
-
-        self._unsub_tilt_timer = async_call_later(self.hass, duration, _on_tilt_timer)
 
     def _schedule_simulate_stop(self, delay: float) -> None:
         """Schedule an automatic hardware stop after the tracked simulated move has completed.
@@ -776,27 +741,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             self._schedule_simulate_stop(self._simulate_stop_delay)
         self.async_write_ha_state()
 
-    async def _finish_tilt_move(self) -> None:
-        self._current_tilt_position = self._tilt_target_pos
-        self._known_tilt_position = True
-        self._stop_tilt_tracking()
-        self.async_write_ha_state()
-
     def _refresh_estimates(self) -> None:
         now = time.monotonic()
-
         if self._move_direction and self._move_started_at is not None and self._move_duration > 0:
             elapsed = min(now - self._move_started_at, self._move_duration)
             progress = elapsed / self._move_duration
             delta = self._move_target_pos - self._move_start_pos
             self._current_cover_position = clamp_percent(self._move_start_pos + (delta * progress))
-
-        if self._tilt_direction and self._tilt_started_at is not None and self._tilt_duration > 0:
-            elapsed = min(now - self._tilt_started_at, self._tilt_duration)
-            progress = elapsed / self._tilt_duration
-            delta = self._tilt_target_pos - self._tilt_start_pos
-            estimated = self._tilt_start_pos + (delta * progress)
-            self._current_tilt_position = snap_to_tilt_step(int(round(estimated)), self._tilt_step_count)
 
     def _stop_cover_tracking(self) -> None:
         self._move_direction = None
@@ -812,13 +763,14 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._cleanup_interval_listener()
 
     def _stop_tilt_tracking(self) -> None:
-        self._tilt_direction = None
-        self._tilt_started_at = None
-        self._tilt_duration = 0.0
-        if self._unsub_tilt_timer:
-            self._unsub_tilt_timer()
-            self._unsub_tilt_timer = None
+        """Clean up the interval listener after a tilt operation completes."""
         self._cleanup_interval_listener()
+
+    def _end_stop_timer_duration(self, duration: float, target: int) -> float:
+        """Return duration extended by end-stop buffer when targeting 0 % or 100 %."""
+        if target in (0, 100) and self._end_stop_buffer > 0:
+            return duration + self._end_stop_buffer
+        return duration
 
     def _cancel_timers(self) -> None:
         self._stop_cover_tracking()
@@ -835,7 +787,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
     @callback
     def _cleanup_interval_listener(self) -> None:
-        if self._move_direction or self._tilt_direction:
+        if self._move_direction:
             return
         if self._unsub_interval:
             self._unsub_interval()
@@ -1028,7 +980,7 @@ class WaremaEWFSGroupCover(CoverEntity):
         invalid: list[str] = []
 
         for entity_id in self._configured_members:
-            if self._is_valid_member(entity_id, registry):
+            if _is_valid_warema_single_member(self.hass, entity_id, registry):
                 valid.append(entity_id)
             else:
                 invalid.append(entity_id)
@@ -1043,10 +995,6 @@ class WaremaEWFSGroupCover(CoverEntity):
                 self.entity_id or self._attr_name,
                 ", ".join(invalid),
             )
-
-    def _is_valid_member(self, entity_id: str, registry: er.EntityRegistry) -> bool:
-        """Return True if entity is a Warema EWFS single-cover entity."""
-        return _is_valid_warema_single_member(self.hass, entity_id, registry)
 
 
 class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
@@ -1203,7 +1151,7 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         self._move_start_pos = self._current_cover_position
         self._move_target_pos = 100 if direction == "open" else 0
 
-        timer_duration = duration + self._end_stop_buffer if self._end_stop_buffer > 0 else duration
+        timer_duration = self._end_stop_timer_duration(duration, self._move_target_pos)
         self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
