@@ -23,10 +23,12 @@
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
           "send_stop_after_move": "Stopp nach Fahrt senden",
-          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)",
+          "end_stop_buffer": "Endanschlag-Puffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard).",
+          "end_stop_buffer": "Zusätzliche Sekunden, die dem Stopp-Timer hinzugefügt werden, wenn das Ziel vollständig geöffnet (100 %) oder vollständig geschlossen (0 %) ist. Der physische Endanschlag des Motors schaltet automatisch ab, sodass der Überlauf unschädlich ist. Damit lässt sich eine leicht unterschätzte Fahrzeit ausgleichen und der Positionsdrift bei jedem vollständigen Öffnen/Schließen zurücksetzen. 0 = deaktiviert (Standard)."
         }
       },
       "group": {
@@ -54,10 +56,12 @@
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
           "send_stop_after_move": "Stopp nach Fahrt senden",
-          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)",
+          "end_stop_buffer": "Endanschlag-Puffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard).",
+          "end_stop_buffer": "Zusätzliche Sekunden, die dem Stopp-Timer hinzugefügt werden, wenn das Ziel vollständig geöffnet (100 %) oder vollständig geschlossen (0 %) ist. Der physische Endanschlag des Motors schaltet automatisch ab, sodass der Überlauf unschädlich ist. Damit lässt sich eine leicht unterschätzte Fahrzeit ausgleichen und der Positionsdrift bei jedem vollständigen Öffnen/Schließen zurücksetzen. 0 = deaktiviert (Standard)."
         }
       }
     },
@@ -81,10 +85,12 @@
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
           "send_stop_after_move": "Stopp nach Fahrt senden",
-          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)",
+          "end_stop_buffer": "Endanschlag-Puffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard).",
+          "end_stop_buffer": "Zusätzliche Sekunden, die dem Stopp-Timer hinzugefügt werden, wenn das Ziel vollständig geöffnet (100 %) oder vollständig geschlossen (0 %) ist. Der physische Endanschlag des Motors schaltet automatisch ab, sodass der Überlauf unschädlich ist. Damit lässt sich eine leicht unterschätzte Fahrzeit ausgleichen und der Positionsdrift bei jedem vollständigen Öffnen/Schließen zurücksetzen. 0 = deaktiviert (Standard)."
         }
       },
       "group": {
@@ -110,10 +116,12 @@
           "tilt_step_time_up": "Zeit Lamellen öffnen je Stufe aufwärts (s)",
           "tilt_step_time_down": "Zeit Lamellen schließen je Stufe abwärts (s)",
           "send_stop_after_move": "Stopp nach Fahrt senden",
-          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)"
+          "simulate_stop_delay": "Verzögerung für automatischen Stopp (s)",
+          "end_stop_buffer": "Endanschlag-Puffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard)."
+          "simulate_stop_delay": "Sekunden, die nach dem Erreichen der Zielposition gewartet werden, bevor ein automatischer Hardware-Stopp gesendet wird. Damit wird die Motorrichtungssperre aufgehoben, nachdem ein Mensch die physische Fernbedienung benutzt hat. 0 = deaktiviert (Standard).",
+          "end_stop_buffer": "Zusätzliche Sekunden, die dem Stopp-Timer hinzugefügt werden, wenn das Ziel vollständig geöffnet (100 %) oder vollständig geschlossen (0 %) ist. Der physische Endanschlag des Motors schaltet automatisch ab, sodass der Überlauf unschädlich ist. Damit lässt sich eine leicht unterschätzte Fahrzeit ausgleichen und der Positionsdrift bei jedem vollständigen Öffnen/Schließen zurücksetzen. 0 = deaktiviert (Standard)."
         }
       }
     }

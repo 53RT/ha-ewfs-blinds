@@ -23,10 +23,12 @@
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
           "send_stop_after_move": "Send stop after move",
-          "simulate_stop_delay": "Simulate stop delay (s)"
+          "simulate_stop_delay": "Simulate stop delay (s)",
+          "end_stop_buffer": "End-stop buffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default).",
+          "end_stop_buffer": "Extra seconds added to the stop timer when targeting fully open (100 %) or fully closed (0 %). The motor's physical end-stop cuts off automatically, so the overrun is harmless. Use this to compensate for a slightly under-estimated travel time and reset accumulated position drift on every full open/close. Set to 0 to disable (default)."
         }
       },
       "group": {
@@ -54,10 +56,12 @@
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
           "send_stop_after_move": "Send stop after move",
-          "simulate_stop_delay": "Simulate stop delay (s)"
+          "simulate_stop_delay": "Simulate stop delay (s)",
+          "end_stop_buffer": "End-stop buffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default).",
+          "end_stop_buffer": "Extra seconds added to the stop timer when targeting fully open (100 %) or fully closed (0 %). The motor's physical end-stop cuts off automatically, so the overrun is harmless. Use this to compensate for a slightly under-estimated travel time and reset accumulated position drift on every full open/close. Set to 0 to disable (default)."
         }
       }
     },
@@ -81,10 +85,12 @@
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
           "send_stop_after_move": "Send stop after move",
-          "simulate_stop_delay": "Simulate stop delay (s)"
+          "simulate_stop_delay": "Simulate stop delay (s)",
+          "end_stop_buffer": "End-stop buffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default).",
+          "end_stop_buffer": "Extra seconds added to the stop timer when targeting fully open (100 %) or fully closed (0 %). The motor's physical end-stop cuts off automatically, so the overrun is harmless. Use this to compensate for a slightly under-estimated travel time and reset accumulated position drift on every full open/close. Set to 0 to disable (default)."
         }
       },
       "group": {
@@ -110,10 +116,12 @@
           "tilt_step_time_up": "Tilt step time up (s)",
           "tilt_step_time_down": "Tilt step time down (s)",
           "send_stop_after_move": "Send stop after move",
-          "simulate_stop_delay": "Simulate stop delay (s)"
+          "simulate_stop_delay": "Simulate stop delay (s)",
+          "end_stop_buffer": "End-stop buffer (s)"
         },
         "data_description": {
-          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default)."
+          "simulate_stop_delay": "Seconds to wait after the cover has reached its tracked position before sending an automatic hardware stop. This neutralises the motor direction lock after a human has used the physical remote. Set to 0 to disable (default).",
+          "end_stop_buffer": "Extra seconds added to the stop timer when targeting fully open (100 %) or fully closed (0 %). The motor's physical end-stop cuts off automatically, so the overrun is harmless. Use this to compensate for a slightly under-estimated travel time and reset accumulated position drift on every full open/close. Set to 0 to disable (default)."
         }
       }
     }

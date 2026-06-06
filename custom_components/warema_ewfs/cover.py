@@ -38,6 +38,7 @@ from .const import (
     CONF_BTN_TILT_DOWN,
     CONF_BTN_TILT_UP,
     CONF_COMMAND_DELAY,
+    CONF_END_STOP_BUFFER,
     CONF_GROUP_MEMBERS,
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
@@ -48,6 +49,7 @@ from .const import (
     CONF_TRAVEL_TIME_DOWN,
     CONF_TRAVEL_TIME_UP,
     DEFAULT_COMMAND_DELAY,
+    DEFAULT_END_STOP_BUFFER,
     DEFAULT_NAME,
     DEFAULT_SEND_STOP_AFTER_MOVE,
     DEFAULT_SIMULATE_STOP_DELAY,
@@ -103,6 +105,9 @@ SINGLE_SHUTTER_SCHEMA = {
     vol.Optional(CONF_SIMULATE_STOP_DELAY, default=DEFAULT_SIMULATE_STOP_DELAY): vol.All(
         vol.Coerce(float), vol.Range(min=0, max=60)
     ),
+    vol.Optional(CONF_END_STOP_BUFFER, default=DEFAULT_END_STOP_BUFFER): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=60)
+    ),
 }
 
 GROUP_SCHEMA = {
@@ -133,6 +138,9 @@ NATIVE_GROUP_SCHEMA = {
     ),
     vol.Optional(CONF_SEND_STOP_AFTER_MOVE, default=DEFAULT_SEND_STOP_AFTER_MOVE): cv.boolean,
     vol.Optional(CONF_SIMULATE_STOP_DELAY, default=DEFAULT_SIMULATE_STOP_DELAY): vol.All(
+        vol.Coerce(float), vol.Range(min=0, max=60)
+    ),
+    vol.Optional(CONF_END_STOP_BUFFER, default=DEFAULT_END_STOP_BUFFER): vol.All(
         vol.Coerce(float), vol.Range(min=0, max=60)
     ),
 }
@@ -168,6 +176,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_SEND_STOP_AFTER_MOVE): cv.boolean,
         vol.Optional(CONF_COMMAND_DELAY): vol.Coerce(float),
         vol.Optional(CONF_SIMULATE_STOP_DELAY): vol.Coerce(float),
+        vol.Optional(CONF_END_STOP_BUFFER): vol.Coerce(float),
     }
 )
 PLATFORM_SCHEMA = vol.All(PLATFORM_SCHEMA, _validate_platform_config)
@@ -220,6 +229,7 @@ async def async_setup_entry(
     config.setdefault(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE)
     config.setdefault(CONF_COMMAND_DELAY, DEFAULT_COMMAND_DELAY)
     config.setdefault(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
+    config.setdefault(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER)
     config[CONF_UNIQUE_ID] = entry.entry_id
     _setup_cover_entity(hass, config, async_add_entities)
 
@@ -301,6 +311,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._tilt_step_time_down: float = config[CONF_TILT_STEP_TIME_DOWN]
         self._send_stop_after_move: bool = config[CONF_SEND_STOP_AFTER_MOVE]
         self._simulate_stop_delay: float = config.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY)
+        self._end_stop_buffer: float = config.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER)
 
         self._commands: dict[str, str] = {
             "open": config[CONF_BTN_OPEN],
@@ -389,6 +400,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             "tilt_step_time_up": self._tilt_step_time_up,
             "tilt_step_time_down": self._tilt_step_time_down,
             "simulate_stop_delay": self._simulate_stop_delay,
+            "end_stop_buffer": self._end_stop_buffer,
         }
 
     async def async_added_to_hass(self) -> None:
@@ -573,7 +585,10 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
         self._move_target_pos = target
         self._move_is_simulated = True
 
-        self._schedule_cover_stop(duration)
+        timer_duration = (
+            duration + self._end_stop_buffer if target in (0, 100) and self._end_stop_buffer > 0 else duration
+        )
+        self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
 
@@ -629,11 +644,22 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
         self._move_direction = "opening" if direction == "open" else "closing"
         self._move_started_at = time.monotonic()
-        self._move_duration = duration
+        self._move_duration = duration  # used for position interpolation; does NOT include the buffer
         self._move_start_pos = self._current_cover_position
         self._move_target_pos = target
 
-        self._schedule_cover_stop(duration)
+        # Add the end-stop buffer only to the stop timer, not to _move_duration.
+        # Keeping _move_duration = travel_time ensures position interpolation is
+        # accurate throughout the journey (e.g. stop at 11 s of a 22 s travel → 50 %).
+        # During the buffer window (travel_time … travel_time+buffer) position is capped
+        # at _move_target_pos because elapsed is clamped to _move_duration; the cover
+        # should already be at or within a few percent of the physical end-stop at that
+        # point, so the error is negligible.  The buffer only extends how long the
+        # integration waits before sending the hardware stop command.
+        timer_duration = (
+            duration + self._end_stop_buffer if target in (0, 100) and self._end_stop_buffer > 0 else duration
+        )
+        self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
 
@@ -1174,7 +1200,8 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         self._move_start_pos = self._current_cover_position
         self._move_target_pos = 100 if direction == "open" else 0
 
-        self._schedule_cover_stop(duration)
+        timer_duration = duration + self._end_stop_buffer if self._end_stop_buffer > 0 else duration
+        self._schedule_cover_stop(timer_duration)
         self._ensure_interval_listener()
         self.async_write_ha_state()
 

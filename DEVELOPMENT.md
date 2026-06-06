@@ -53,9 +53,24 @@ The following hooks run automatically on every commit:
 
 Tests (`pytest`) run automatically on `git push` (pre-push stage).
 
+## Branch Strategy
+
+| Branch | Purpose | CI | HACS channel |
+|--------|---------|-----|--------------|
+| `main` | Stable releases | ✅ | Stable |
+| `dev` | Beta / in-progress work | ✅ | Beta (pre-release) |
+
+**Rule of thumb:** develop on `dev`, merge into `main` only for stable releases.
+
+```
+dev  ──►  (beta tag v0.2.0-beta.1)  ──►  pre-release on GitHub
+ │
+ └──►  main  ──►  (stable tag v0.2.0)  ──►  stable release on GitHub
+```
+
 ## CI
 
-GitHub Actions runs on every push/PR to `main`:
+GitHub Actions runs on every push/PR to **`main` and `dev`**:
 - **HACS** — validates HACS compatibility
 - **Hassfest** — validates `manifest.json` and integration structure
 - **Ruff** — linting and format checks
@@ -66,22 +81,42 @@ GitHub Actions runs on every push/PR to `main`:
 Releases are created by pushing a Git tag. The tag name drives everything —
 HACS uses it as the version users see and install.
 
-**Steps:**
+### Stable release (from `main`)
 
-1. Bump `version` in `custom_components/warema_ewfs/manifest.json` to the new version (e.g. `0.2.0`).
-2. Commit the change:
+1. Bump `version` in `custom_components/warema_ewfs/manifest.json` (e.g. `0.2.0`).
+2. Commit & push to `main`:
    ```zsh
+   git checkout main
+   git merge dev
    git add custom_components/warema_ewfs/manifest.json
    git commit -m "chore: bump version to 0.2.0"
-   git push
+   git push origin main
    ```
-3. Create and push a matching tag:
+3. Tag and push:
    ```zsh
    git tag v0.2.0
    git push origin v0.2.0
    ```
-4. The `release.yml` workflow runs automatically, verifies the tag matches
-   `manifest.json`, and creates a GitHub Release with auto-generated release notes.
+4. The `release.yml` workflow creates a **stable** GitHub Release.
+
+### Beta release (from `dev`)
+
+1. Bump `version` in `manifest.json` to a pre-release version (e.g. `0.2.0-beta.1`).
+2. Commit & push to `dev`:
+   ```zsh
+   git checkout dev
+   git add custom_components/warema_ewfs/manifest.json
+   git commit -m "chore: bump version to 0.2.0-beta.1"
+   git push origin dev
+   ```
+3. Tag and push:
+   ```zsh
+   git tag v0.2.0-beta.1
+   git push origin v0.2.0-beta.1
+   ```
+4. The `release.yml` workflow creates a **pre-release** (marked automatically because
+   the tag contains `-beta`/`-rc`/`-alpha`). HACS shows it only to users who opted in
+   to beta versions.
 
 > The tag **must** match `manifest.json` exactly (tag `v0.2.0` → version `0.2.0`).
 > The workflow will fail with an error if they differ.

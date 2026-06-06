@@ -27,16 +27,20 @@ from .const import (
     CONF_BTN_TILT_DOWN,
     CONF_BTN_TILT_UP,
     CONF_COMMAND_DELAY,
+    CONF_END_STOP_BUFFER,
     CONF_GROUP_MEMBERS,
     CONF_IS_GROUP,
     CONF_IS_NATIVE_GROUP,
     CONF_SEND_STOP_AFTER_MOVE,
+    CONF_SIMULATE_STOP_DELAY,
     CONF_TILT_STEP_TIME_DOWN,
     CONF_TILT_STEP_TIME_UP,
     CONF_TRAVEL_TIME_DOWN,
     CONF_TRAVEL_TIME_UP,
     DEFAULT_COMMAND_DELAY,
+    DEFAULT_END_STOP_BUFFER,
     DEFAULT_SEND_STOP_AFTER_MOVE,
+    DEFAULT_SIMULATE_STOP_DELAY,
     DEFAULT_TILT_STEP_TIME_DOWN,
     DEFAULT_TILT_STEP_TIME_UP,
     DEFAULT_TRAVEL_TIME_DOWN,
@@ -94,6 +98,14 @@ def _single_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_SEND_STOP_AFTER_MOVE,
                 default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE),
             ): BooleanSelector(),
+            vol.Optional(
+                CONF_SIMULATE_STOP_DELAY,
+                default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY),
+            ): _time_selector(min_val=0, max_val=60),
+            vol.Optional(
+                CONF_END_STOP_BUFFER,
+                default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER),
+            ): _time_selector(min_val=0, max_val=60),
         }
     )
 
@@ -149,6 +161,14 @@ def _native_group_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 CONF_SEND_STOP_AFTER_MOVE,
                 default=d.get(CONF_SEND_STOP_AFTER_MOVE, DEFAULT_SEND_STOP_AFTER_MOVE),
             ): BooleanSelector(),
+            vol.Optional(
+                CONF_SIMULATE_STOP_DELAY,
+                default=d.get(CONF_SIMULATE_STOP_DELAY, DEFAULT_SIMULATE_STOP_DELAY),
+            ): _time_selector(min_val=0, max_val=60),
+            vol.Optional(
+                CONF_END_STOP_BUFFER,
+                default=d.get(CONF_END_STOP_BUFFER, DEFAULT_END_STOP_BUFFER),
+            ): _time_selector(min_val=0, max_val=60),
         }
     )
 
