@@ -74,12 +74,12 @@ set_cover_position_and_tilt_step:
           mode: slider
     tilt_step:
       name: Tilt step
-      description: Target tilt step (0-6, where 0=vertical and 6=horizontal).
+      description: Target tilt step index (0 = vertical, tilt_step_count−1 = horizontal). Values beyond the entity's configured step count are clamped to the maximum valid step.
       required: true
       selector:
         number:
           min: 0
-          max: 6
+          max: 19
           mode: slider
           step: 1
 
