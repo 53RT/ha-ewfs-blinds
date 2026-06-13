@@ -574,6 +574,22 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         direction = "open" if target > self._current_cover_position else "close"
+
+        # If currently moving in the opposite direction the hardware would stop.
+        # Reflect the same behaviour in the simulated state.
+        if (self._move_direction == "opening" and direction == "close") or (
+            self._move_direction == "closing" and direction == "open"
+        ):
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            else:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self.async_write_ha_state()
+            return
+
         self._move_direction = "opening" if direction == "open" else "closing"
         self._move_started_at = time.monotonic()
         self._move_duration = duration
@@ -634,6 +650,23 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             # Force mode: full travel time in the target direction
             duration = self._travel_time_up if target >= 50 else self._travel_time_down
             direction = "open" if target >= 50 else "close"
+
+        # If currently moving in the opposite direction the hardware interprets the
+        # command as a stop (motor returns to neutral) rather than reversing immediately.
+        if (self._move_direction == "opening" and direction == "close") or (
+            self._move_direction == "closing" and direction == "open"
+        ):
+            await self._send_command(direction)
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            else:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self.async_write_ha_state()
+            return
+
         await self._send_command(direction)
 
         self._move_direction = "opening" if direction == "open" else "closing"
@@ -1054,13 +1087,23 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_closing = self._move_direction == "closing"
         await super().async_open_cover(**kwargs)
-        await self._fanout_simulate("open")
+        # If direction was reversed (was closing), hardware stopped - fanout stop.
+        if was_closing and self._move_direction is None:
+            await self._fanout_simulate("stop")
+        else:
+            await self._fanout_simulate("open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_opening = self._move_direction == "opening"
         await super().async_close_cover(**kwargs)
-        await self._fanout_simulate("close")
+        # If direction was reversed (was opening), hardware stopped - fanout stop.
+        if was_opening and self._move_direction is None:
+            await self._fanout_simulate("stop")
+        else:
+            await self._fanout_simulate("close")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         requested = clamp_percent(float(kwargs[ATTR_POSITION]))
@@ -1150,6 +1193,22 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
             # Force mode: infer direction from target value
             direction = "open" if target >= 50 else "close"
         duration = self._travel_time_up if direction == "open" else self._travel_time_down
+
+        # If currently moving in the opposite direction the hardware interprets the
+        # command as a stop (motor returns to neutral) rather than reversing immediately.
+        if (self._move_direction == "opening" and direction == "close") or (
+            self._move_direction == "closing" and direction == "open"
+        ):
+            await self._send_command(direction)
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            else:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self.async_write_ha_state()
+            return
 
         await self._send_command(direction)
 

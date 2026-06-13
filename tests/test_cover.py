@@ -1763,6 +1763,346 @@ class TestNativeGroupStopMemberState:
 
 
 # ===========================================================================
+# Reverse-direction while moving: first press acts as stop
+# ===========================================================================
+
+
+class TestReverseDirectionStop:
+    """Test that commanding the opposite direction while moving acts as a stop."""
+
+    # ------------------------------------------------------------------
+    # Single shutter - hardware move
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_open_while_closing_sends_open_command_and_stops(self):
+        """Sending open while closing must send the open button but stop tracking."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = 0.0
+        cover._move_duration = 20.0
+
+        await cover._start_cover_move(100)
+
+        assert _last_button_pressed(cover) == "button.open"
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_close_while_opening_sends_close_command_and_stops(self):
+        """Sending close while opening must send the close button but stop tracking."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None  # prevent _refresh_estimates from overriding position
+        cover._move_duration = 0.0
+
+        await cover._start_cover_move(0)
+
+        assert _last_button_pressed(cover) == "button.close"
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_open_while_closing_infers_tilt_0(self):
+        """Stopping while closing means slats ended vertical (tilt=0)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "closing"
+        cover._current_tilt_position = 67
+
+        await cover._start_cover_move(100)
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_close_while_opening_infers_tilt_100(self):
+        """Stopping while opening means slats ended horizontal (tilt=100)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "opening"
+        cover._current_tilt_position = 33
+
+        await cover._start_cover_move(0)
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_reverse_does_not_start_new_tracking(self):
+        """After a reverse-direction stop, no new move timer must be scheduled."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "closing"
+        cover._move_started_at = 0.0
+        cover._move_duration = 20.0
+
+        import custom_components.warema_ewfs.cover as cover_module
+
+        timer_calls: list = []
+
+        def fake_call_later(hass, delay, action):
+            timer_calls.append(delay)
+            return MagicMock()
+
+        original = cover_module.async_call_later
+        cover_module.async_call_later = fake_call_later
+        try:
+            await cover._start_cover_move(100)
+        finally:
+            cover_module.async_call_later = original
+
+        assert len(timer_calls) == 0, "No new timer must be scheduled on a reverse-direction stop"
+
+    @pytest.mark.asyncio
+    async def test_same_direction_while_moving_is_not_treated_as_stop(self):
+        """Sending open while already opening must not be treated as a stop."""
+        cover = _make_cover()
+        cover._current_cover_position = 0
+        cover._known_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = 0.0
+        cover._move_duration = 20.0
+
+        # Opening while already opening: duration > 0 still, so nothing should change
+        # Refresh sets current position based on elapsed; let's start from scratch
+        cover._move_direction = None
+        await cover._start_cover_move(100)
+
+        assert cover._move_direction == "opening"
+
+    @pytest.mark.asyncio
+    async def test_reverse_direction_via_async_open_cover(self):
+        """async_open_cover while closing must stop (not start opening)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "closing"
+
+        await cover.async_open_cover()
+
+        assert cover._move_direction is None
+        assert _last_button_pressed(cover) == "button.open"
+
+    @pytest.mark.asyncio
+    async def test_reverse_direction_via_async_close_cover(self):
+        """async_close_cover while opening must stop (not start closing)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "opening"
+
+        await cover.async_close_cover()
+
+        assert cover._move_direction is None
+        assert _last_button_pressed(cover) == "button.close"
+
+    # ------------------------------------------------------------------
+    # Single shutter - simulated move (members receiving simulate commands)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_while_closing_stops_without_hardware(self):
+        """_simulate_cover_move open while closing must stop tracking; no button pressed."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "closing"
+
+        await cover._simulate_cover_move(100)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_while_opening_stops_without_hardware(self):
+        """_simulate_cover_move close while opening must stop tracking; no button pressed."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "opening"
+
+        await cover._simulate_cover_move(0)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_while_closing_infers_tilt_0(self):
+        """Simulated reverse while closing sets tilt=0 (slats were vertical when stopped)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "closing"
+        cover._current_tilt_position = 67
+
+        await cover._simulate_cover_move(100)
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_while_opening_infers_tilt_100(self):
+        """Simulated reverse while opening sets tilt=100 (slats were horizontal when stopped)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._move_direction = "opening"
+        cover._current_tilt_position = 33
+
+        await cover._simulate_cover_move(0)
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_simulate_open_while_closing_via_simulate_command(self):
+        """simulate_command('open') while closing must stop (no tracking of open)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "closing"
+
+        await cover.async_simulate_command("open")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_close_while_opening_via_simulate_command(self):
+        """simulate_command('close') while opening must stop (no tracking of close)."""
+        cover = _make_cover()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "opening"
+
+        await cover.async_simulate_command("close")
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    # ------------------------------------------------------------------
+    # Native group - fanout propagation on reverse direction
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_while_closing_fanouts_simulate_stop(self):
+        """Native group: open while closing must fanout simulate('stop') not simulate('open')."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "closing"
+
+        await cover.async_open_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_native_group_close_while_opening_fanouts_simulate_stop(self):
+        """Native group: close while opening must fanout simulate('stop') not simulate('close')."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 50
+        cover._known_position = True
+        cover._move_direction = "opening"
+
+        await cover.async_close_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_while_idle_fanouts_simulate_open(self):
+        """Native group: open while idle must still fanout simulate('open')."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 0
+        cover._known_position = True
+        cover._move_direction = None
+
+        await cover.async_open_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "open"
+
+    @pytest.mark.asyncio
+    async def test_native_group_close_while_idle_fanouts_simulate_close(self):
+        """Native group: close while idle must still fanout simulate('close')."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 100
+        cover._known_position = True
+        cover._move_direction = None
+
+        await cover.async_close_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "close"
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_while_closing_group_direction_cleared(self):
+        """Native group itself must also have _move_direction cleared on reverse."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 50
+        cover._move_direction = "closing"
+
+        await cover.async_open_cover()
+
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_native_group_close_while_opening_group_direction_cleared(self):
+        """Native group itself must also have _move_direction cleared on reverse."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 50
+        cover._move_direction = "opening"
+
+        await cover.async_close_cover()
+
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_native_group_reverse_propagates_stop_to_member_state(self):
+        """End-to-end: opening while group is closing stops member tracking too."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._current_cover_position = 50
+        member._move_direction = "closing"
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._current_cover_position = 50
+        group._move_direction = "closing"
+
+        await group.async_open_cover()
+
+        assert member._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_native_group_reverse_member_tilt_reflects_stop_direction(self):
+        """Member tilt must be 0 when group reverses from closing (stopped while closing)."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._current_cover_position = 50
+        member._move_direction = "closing"
+        member._current_tilt_position = 67
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._current_cover_position = 50
+        group._move_direction = "closing"
+
+        await group.async_open_cover()
+
+        # Member was closing when stopped → tilt = 0
+        assert member._current_tilt_position == 0
+
+
+# ===========================================================================
 # WaremaEWFSGroupCover - command_delay
 # ===========================================================================
 
