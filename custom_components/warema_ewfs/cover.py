@@ -611,6 +611,28 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         step_sign = 1 if target_step > start_step else -1
+        direction = "tilt_up" if step_sign > 0 else "tilt_down"
+
+        # A tilt command in the opposite direction to an ongoing cover move stops the motor.
+        if (self._move_direction == "opening" and direction == "tilt_down") or (
+            self._move_direction == "closing" and direction == "tilt_up"
+        ):
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            else:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self.async_write_ha_state()
+            return
+
+        # A tilt command in the same direction as the cover move has no effect.
+        if (self._move_direction == "opening" and direction == "tilt_up") or (
+            self._move_direction == "closing" and direction == "tilt_down"
+        ):
+            return
+
         next_step = start_step + step_sign
         self._current_tilt_position = tilt_step_to_percent(next_step, self._tilt_step_count)
         self._known_tilt_position = True
@@ -688,6 +710,30 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         direction = "tilt_up" if target_step > start_step else "tilt_down"
+
+        # A tilt command in the opposite direction to an ongoing cover move stops the motor:
+        # tilt_down while opening, or tilt_up while closing.
+        if (self._move_direction == "opening" and direction == "tilt_down") or (
+            self._move_direction == "closing" and direction == "tilt_up"
+        ):
+            await self._send_command(direction)
+            if self._move_direction == "opening":
+                self._current_tilt_position = 100
+                self._known_tilt_position = True
+            else:
+                self._current_tilt_position = 0
+                self._known_tilt_position = True
+            self._stop_cover_tracking()
+            self.async_write_ha_state()
+            return
+
+        # A tilt command in the same direction as the cover move has no effect: the cover
+        # already drives the slats to their end position (100 % when opening, 0 % when closing).
+        if (self._move_direction == "opening" and direction == "tilt_up") or (
+            self._move_direction == "closing" and direction == "tilt_down"
+        ):
+            return
+
         step_delay = self._tilt_step_time_up if direction == "tilt_up" else self._tilt_step_time_down
         step_delta = abs(target_step - start_step)
         step_sign = 1 if target_step > start_step else -1
@@ -1122,18 +1168,44 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_closing = self._move_direction == "closing"
+        was_moving = self._move_direction is not None
         await super().async_open_cover_tilt(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        if was_closing and self._move_direction is None:
+            # tilt_up while closing = opposite direction → hardware stopped
+            await self._fanout_simulate("stop")
+        elif was_moving and self._move_direction is not None:
+            # tilt_up while opening = same direction → hardware no-op, don't fanout
+            pass
+        else:
+            await self._fanout_tilt(self._current_tilt_position)
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_opening = self._move_direction == "opening"
+        was_moving = self._move_direction is not None
         await super().async_close_cover_tilt(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        if was_opening and self._move_direction is None:
+            # tilt_down while opening = opposite direction → hardware stopped
+            await self._fanout_simulate("stop")
+        elif was_moving and self._move_direction is not None:
+            # tilt_down while closing = same direction → hardware no-op, don't fanout
+            pass
+        else:
+            await self._fanout_tilt(self._current_tilt_position)
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_moving = self._move_direction is not None
         await super().async_set_cover_tilt_position(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        if was_moving and self._move_direction is None:
+            # Opposite-direction tilt stopped the cover move
+            await self._fanout_simulate("stop")
+        elif was_moving and self._move_direction is not None:
+            # Same-direction tilt → hardware no-op, don't fanout
+            pass
+        else:
+            await self._fanout_tilt(self._current_tilt_position)
 
     async def async_set_cover_position_and_tilt(self, position: float, tilt_position: float) -> None:
         target_position = clamp_percent(position)

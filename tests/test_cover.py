@@ -2103,6 +2103,453 @@ class TestReverseDirectionStop:
 
 
 # ===========================================================================
+# Tilt in opposite direction while cover is moving also stops the motor
+# ===========================================================================
+
+
+class TestOppositeTiltStopsMove:
+    """Test that a tilt command in the opposite direction to an ongoing cover move stops it."""
+
+    # ------------------------------------------------------------------
+    # Single shutter - _start_tilt_move
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_opening_stops_and_sends_tilt_down(self):
+        """tilt_down while opening must send the tilt_down button and stop tracking."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50  # step 3
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+        cover._move_duration = 0.0
+
+        await cover._start_tilt_move(0)  # tilt_down direction
+
+        assert _last_button_pressed(cover) == "button.tilt_down"
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_tilt_up_while_closing_stops_and_sends_tilt_up(self):
+        """tilt_up while closing must send the tilt_up button and stop tracking."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50  # step 3
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+        cover._move_duration = 0.0
+
+        await cover._start_tilt_move(100)  # tilt_up direction
+
+        assert _last_button_pressed(cover) == "button.tilt_up"
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_opening_infers_tilt_100(self):
+        """Stopped while opening → slats end horizontal (tilt=100)."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(0)
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_tilt_up_while_closing_infers_tilt_0(self):
+        """Stopped while closing → slats end vertical (tilt=0)."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(100)
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_opening_via_async_close_cover_tilt(self):
+        """async_close_cover_tilt while opening must stop cover tracking."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover.async_close_cover_tilt()
+
+        assert cover._move_direction is None
+        assert _last_button_pressed(cover) == "button.tilt_down"
+
+    @pytest.mark.asyncio
+    async def test_tilt_up_while_closing_via_async_open_cover_tilt(self):
+        """async_open_cover_tilt while closing must stop cover tracking."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover.async_open_cover_tilt()
+
+        assert cover._move_direction is None
+        assert _last_button_pressed(cover) == "button.tilt_up"
+
+    @pytest.mark.asyncio
+    async def test_tilt_same_direction_does_not_stop_cover(self):
+        """tilt_up while opening is same direction - cover tracking must NOT be stopped."""
+        cover = _make_cover()
+        cover._current_tilt_position = 0  # step 0, can go tilt_up
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(100)  # tilt_up - same direction as opening
+
+        # Cover tracking is still running
+        assert cover._move_direction == "opening"
+
+    @pytest.mark.asyncio
+    async def test_tilt_same_direction_closing_does_not_stop_cover(self):
+        """tilt_down while closing is same direction - cover tracking must NOT be stopped."""
+        cover = _make_cover()
+        cover._current_tilt_position = 100  # step 6, can go tilt_down
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(0)  # tilt_down - same direction as closing
+
+        assert cover._move_direction == "closing"
+
+    @pytest.mark.asyncio
+    async def test_tilt_up_while_opening_sends_no_command(self):
+        """tilt_up while opening must send no button press at all."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(100)
+
+        cover.hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_closing_sends_no_command(self):
+        """tilt_down while closing must send no button press at all."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(0)
+
+        cover.hass.services.async_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tilt_up_while_opening_does_not_change_tilt_position(self):
+        """tilt_up while opening must leave the tilt position unchanged."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(100)
+
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_closing_does_not_change_tilt_position(self):
+        """tilt_down while closing must leave the tilt position unchanged."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._start_tilt_move(0)
+
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_tilt_down_while_idle_executes_normally(self):
+        """tilt_down when cover is idle must execute the tilt step as normal."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50  # step 3
+        cover._known_tilt_position = True
+        cover._move_direction = None
+
+        # One step down: step 3 → step 2 = 33 %
+        await cover._start_tilt_move(33)
+
+        assert _last_button_pressed(cover) == "button.tilt_down"
+        assert cover._current_tilt_position == 33  # step 2
+
+    # ------------------------------------------------------------------
+    # _simulate_tilt_move: same-direction no-op
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_up_while_opening_is_noop(self):
+        """Simulated tilt_up while opening must be a no-op."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(100)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction == "opening"
+        assert cover._current_tilt_position == 50
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_down_while_closing_is_noop(self):
+        """Simulated tilt_down while closing must be a no-op."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(0)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction == "closing"
+        assert cover._current_tilt_position == 50
+
+    # ------------------------------------------------------------------
+    # Native group: same-direction tilt produces no fanout
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_tilt_while_opening_produces_no_fanout(self):
+        """open_cover_tilt while opening is a hardware no-op - nothing must be fanned out."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover.async_open_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        warema_calls = [c for c in calls if c[0][0] == "warema_ewfs"]
+        assert len(warema_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_native_group_close_tilt_while_closing_produces_no_fanout(self):
+        """close_cover_tilt while closing is a hardware no-op - nothing must be fanned out."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover.async_close_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        warema_calls = [c for c in calls if c[0][0] == "warema_ewfs"]
+        assert len(warema_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_native_group_set_tilt_same_direction_produces_no_fanout(self):
+        """set_cover_tilt_position in same direction while moving must produce no fanout."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 33  # step 2 - will move tilt_up to reach 100
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        from homeassistant.components.cover import ATTR_TILT_POSITION
+
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 100})
+
+        calls = cover.hass.services.async_call.call_args_list
+        warema_calls = [c for c in calls if c[0][0] == "warema_ewfs"]
+        assert len(warema_calls) == 0
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_tilt_while_opening_cover_direction_unchanged(self):
+        """After same-direction no-op, group cover tracking must still be active."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover.async_open_cover_tilt()
+
+        assert cover._move_direction == "opening"
+
+    # ===========================================================================
+    # WaremaEWFSGroupCover - command_delay
+    # ===========================================================================
+
+    # ------------------------------------------------------------------
+    # Single shutter - _simulate_tilt_move
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_down_while_opening_stops_without_hardware(self):
+        """Simulated tilt_down while opening must stop tracking without sending hardware."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(0)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_up_while_closing_stops_without_hardware(self):
+        """Simulated tilt_up while closing must stop tracking without sending hardware."""
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(100)
+
+        cover.hass.services.async_call.assert_not_called()
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_down_while_opening_infers_tilt_100(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(0)
+
+        assert cover._current_tilt_position == 100
+
+    @pytest.mark.asyncio
+    async def test_simulate_tilt_up_while_closing_infers_tilt_0(self):
+        cover = _make_cover()
+        cover._current_tilt_position = 50
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover._simulate_tilt_move(100)
+
+        assert cover._current_tilt_position == 0
+
+    # ------------------------------------------------------------------
+    # Native group - fanout propagation on opposite-tilt stop
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_native_group_close_tilt_while_opening_fanouts_simulate_stop(self):
+        """close_cover_tilt while opening → fanout simulate('stop') not tilt position."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        await cover.async_close_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_tilt_while_closing_fanouts_simulate_stop(self):
+        """open_cover_tilt while closing → fanout simulate('stop') not tilt position."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = "closing"
+        cover._move_started_at = None
+
+        await cover.async_open_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_native_group_set_tilt_opposite_while_opening_fanouts_simulate_stop(self):
+        """set_cover_tilt_position in opposite direction while opening → fanout stop."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 67  # step 4 - will move tilt_down to reach 0
+        cover._known_tilt_position = True
+        cover._move_direction = "opening"
+        cover._move_started_at = None
+
+        from homeassistant.components.cover import ATTR_TILT_POSITION
+
+        await cover.async_set_cover_tilt_position(**{ATTR_TILT_POSITION: 0})
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_native_group_open_tilt_while_idle_fanouts_tilt_position(self):
+        """open_cover_tilt while idle must fanout tilt position, not stop."""
+        cover = _make_native_group_with_members()
+        cover._current_tilt_position = 50
+        cover._known_tilt_position = True
+        cover._move_direction = None
+
+        await cover.async_open_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        tilt_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_SET_TILT]
+        assert len(tilt_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_native_group_opposite_tilt_propagates_stop_to_member_state(self):
+        """End-to-end: close_cover_tilt while opening clears member cover tracking."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._current_tilt_position = 50
+        member._move_direction = "opening"
+        member._move_started_at = None
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._current_tilt_position = 50
+        group._move_direction = "opening"
+        group._move_started_at = None
+
+        await group.async_close_cover_tilt()
+
+        assert member._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_native_group_opposite_tilt_member_tilt_inferred_from_stop_direction(self):
+        """Member tilt must be 100 when stopped while opening (via opposite tilt)."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._current_tilt_position = 50
+        member._move_direction = "opening"
+        member._move_started_at = None
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._current_tilt_position = 50
+        group._move_direction = "opening"
+        group._move_started_at = None
+
+        await group.async_close_cover_tilt()
+
+        assert member._current_tilt_position == 100
+
+
+# ===========================================================================
 # WaremaEWFSGroupCover - command_delay
 # ===========================================================================
 
