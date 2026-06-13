@@ -22,12 +22,14 @@ This integration solves that by bridging the gap between an ESPHome RF transmitt
 | Feature                          | Details |
 |----------------------------------|---|
 | **Full position control**        | Open, close, or move to any percentage — tracked by elapsed time |
-| **Slat tilt control**            | 7 discrete tilt steps (~16 ° each), individually tunable per direction |
+| **Slat tilt control**            | Configurable discrete tilt steps (default 7, ~16 ° each), individually tunable per direction |
 | **Persistent state**             | Position and tilt survive Home Assistant restarts |
 | **UI-first setup**               | Complete Config Flow and Options Flow — no YAML needed |
 | ️ **Group support**              | Fan-out groups and native Warema remote groups |
 | **Physical remote co-existence** | `simulate_command` keeps HA in sync when a wall remote is used |
 | **Hardware quirk handling**      | `simulate_stop_delay` neutralises the WAREMA motor direction lock |
+| **End-stop drift correction**    | `end_stop_buffer` adds a safe overrun margin on full open/close to correct accumulated timing drift |
+| **Multi-manufacturer support**   | `tilt_step_count` makes the integration usable with non-Warema covers that have a different slat step count |
 | ️ **Custom services**            | Force-move, combined position+tilt, discrete tilt steps, and more |
 
 ---
@@ -76,6 +78,9 @@ Each shutter maps five logical commands to existing Home Assistant `button` enti
 | `tilt_up` | Rotate slats one step toward horizontal (100 %) |
 | `tilt_down` | Rotate slats one step toward vertical (0 %) |
 
+The number of slat steps is configurable via `tilt_step_count` (default `7`).
+One step always moves from the current position to the next discrete step.
+
 ---
 
 ## Configuration
@@ -116,6 +121,8 @@ cover:
     tilt_step_time_down:  0.45  # seconds per tilt step toward 0 %
     send_stop_after_move: true
     simulate_stop_delay:  3.0   # send stop 3 s after a simulated move finishes
+    end_stop_buffer:      2.0   # extend stop timer by 2 s on full open/close (optional)
+    tilt_step_count:      7     # number of discrete tilt steps (default 7, optional)
 
   - platform: warema_ewfs
     name: Living Room
@@ -188,6 +195,8 @@ cover:
 | `tilt_step_time_down` | — | Seconds per tilt step toward 0 % |
 | `send_stop_after_move` | `true` | Send `btn_stop` when a position move reaches its target |
 | `simulate_stop_delay` | `0.0` | Seconds after a simulated move completes before a hardware stop is sent (0 = disabled) |
+| `end_stop_buffer` | `0.0` | Extra seconds added to the stop timer when moving to fully open (100 %) or fully closed (0 %); the motor's physical end-stop cuts off automatically, so the overrun is harmless — use this to correct accumulated timing drift on every full travel (0 = disabled) |
+| `tilt_step_count` | `7` | Number of discrete tilt positions (2–20). Default of `7` matches Warema EWFS shutters (~16 ° per step). Adjust for other models or manufacturers. |
 | `unique_id` | — | Recommended; enables entity renaming and registry management |
 
 ### Fan-out Group
@@ -247,6 +256,35 @@ reason (explicit stop, new move started).
 
 ---
 
+## End-Stop Buffer
+
+Because position is tracked by elapsed time, a slightly under-estimated `travel_time_up`
+or `travel_time_down` causes the integration to send a stop command before the cover has
+physically reached the end-stop.  Over time this leads to accumulated drift.
+
+`end_stop_buffer` adds extra seconds to the stop timer **only when the target is fully
+open (100 %) or fully closed (0 %)**.  The motor has a physical end-stop in both
+directions and cuts off automatically when it arrives there, so any overrun is completely
+harmless.
+
+```yaml
+end_stop_buffer: 2.0   # wait up to 2 s extra before sending stop on full open/close
+```
+
+**How position tracking is affected:**
+- The position estimate continues to interpolate linearly until the cover reaches the
+  target, using the configured `travel_time_*`.  During the buffer window the tracked
+  position is capped at 0 % / 100 % (the motor should already be at the end-stop).
+- If the cover is stopped manually during the buffer window, the position estimate is
+  accurate for stops that happen before `travel_time_*` elapses; once the tracking time
+  has expired the position shows the target value.
+- Every full open/close effectively **resets accumulated drift** back to zero.
+
+> **Tip:** Start with a value equal to 5–10 % of your `travel_time` (e.g. `2.0` for a
+> 22 s travel time) and reduce if the motor overshoots noticeably.
+
+---
+
 ## Custom Services
 
 ### `warema_ewfs.simulate_command`
@@ -281,11 +319,21 @@ data:
 
 ### `cover.set_cover_position_and_tilt_step`
 
-Same as above but using a discrete tilt step (`0`–`6`):
+Same as above but using a discrete tilt step index instead of a percentage.
+The valid range is `0` to `tilt_step_count − 1` (default `0`–`6`).
+Values above the configured maximum are clamped to the last step.
+
+Default tilt step map (7 steps):
 
 | Step | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---|---|---|---|---|---|---|
 | Tilt % | 0 | 17 | 33 | 50 | 67 | 83 | 100 |
+
+Example with a 5-step cover (`tilt_step_count: 5`):
+
+| Step | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| Tilt % | 0 | 25 | 50 | 75 | 100 |
 
 ```yaml
 service: cover.set_cover_position_and_tilt_step
@@ -293,7 +341,7 @@ target:
   entity_id: cover.kitchen
 data:
   position: 50
-  tilt_step: 4    # ≈ 67 % / ~45 °
+  tilt_step: 4    # step 4 of 7 ≈ 67 % with default step count
 ```
 
 ### `warema_ewfs.force_move`
@@ -326,11 +374,17 @@ Works on single shutters, fan-out groups, and native remote groups.
 
 - Measure `travel_time_up` and `travel_time_down` **separately** for each shutter
   (motors are not symmetric).
-- For tilt timing, use the 7-step model: press *tilt up* once, wait, observe the angle,
-  and adjust `tilt_step_time_up` until a single step moves ~16 °.
-- Without physical feedback, position is estimated from elapsed time — occasional
-  recalibration (fully open or fully close) keeps drift in check.
+- For tilt timing, press *tilt up* once, wait, observe the angle, and adjust
+  `tilt_step_time_up` until a single step moves the expected angle.
+  With the default `tilt_step_count: 7` that is roughly 16 ° per step.
+- Add a small `end_stop_buffer` (e.g. `2.0` for a 22 s travel time) to ensure the
+  cover always reaches its physical end-stop on full open/close, resetting any
+  accumulated timing drift.
+- Without physical feedback, position is estimated from elapsed time — performing
+  a full open or close periodically resets accumulated drift to zero.
 - Manual remote usage introduces drift until HA sends a new command.
+- **Other manufacturers / models:** if your cover has a different number of slat steps,
+  set `tilt_step_count` accordingly (e.g. `5` for a 5-position slat mechanism).
 
 ---
 

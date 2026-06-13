@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`end_stop_buffer` config option** (default `0.0` s, i.e. disabled) for single shutters
+  and native remote groups.
+  When set to a positive value, the stop timer is extended by this many seconds **only when
+  moving to the physical end-stops** (fully open `100 %` or fully closed `0 %`).  The motor
+  cuts off automatically at its mechanical end-stop, so the overrun is completely harmless.
+  This compensates for a slightly under-estimated `travel_time_*` and resets accumulated
+  position drift on every full open/close cycle.
+  - The extension applies only to the hardware stop timer, not to the position-tracking
+    duration, so the position estimate remains accurate for intermediate manual stops during
+    normal travel.
+  - Works for both hardware-commanded and simulated moves (`simulate_command`).
+  - The `end_stop_buffer` value is exposed as a state attribute for easy inspection.
+
+- **`tilt_step_count` config option** (default `7`, range `2`–`20`) for single shutters and
+  native remote groups.
+  Previously the number of discrete tilt positions was hardcoded to `7` (the value used by
+  Warema EWFS shutters, giving ~16 ° per step).  This option makes the integration usable
+  with other manufacturers or models that have a different slat step count.
+  - All tilt operations (`open_cover_tilt`, `close_cover_tilt`, `set_cover_tilt_position`,
+    `simulate_command`, `simulate_set_tilt_position`, `set_cover_position_and_tilt_step`)
+    respect the configured step count.
+  - `warema_ewfs.set_cover_position_and_tilt_step` accepts step indices from `0` to
+    `tilt_step_count − 1`; values beyond the maximum are clamped.
+  - The `tilt_steps` state attribute now reflects the entity's configured step count rather
+    than the hardcoded constant.
+
+### Changed
+
+- **`warema_ewfs.set_cover_position_and_tilt_step` service schema**: the maximum accepted
+  `tilt_step` value in `services.yaml` was raised from `6` to `19` to accommodate entities
+  configured with up to 20 tilt steps.  Per-entity clamping ensures correctness regardless
+  of the configured `tilt_step_count`.
+
+### Removed
+
+- **Dead tilt-animation scaffolding** that was never activated: the instance variables
+  `_tilt_direction`, `_tilt_started_at`, `_tilt_duration`, `_tilt_start_pos`,
+  `_tilt_target_pos`, and `_unsub_tilt_timer`; the methods `_schedule_tilt_stop` and
+  `_finish_tilt_move`; and the corresponding dead branch in `_refresh_estimates`.
+  This had no effect on runtime behaviour.
+- **Commented-out alternative implementations** of `async_open_cover_tilt` /
+  `async_close_cover_tilt` that were superseded in a previous refactor.
+
+### Refactored
+
+- Extracted `_end_stop_timer_duration(duration, target)` helper on `WaremaEWFSCover`
+  to de-duplicate the end-stop buffer calculation that appeared in both `_start_cover_move`
+  and `_simulate_cover_move`.
+- `WaremaEWFSGroupCover._revalidate_group_members` now calls `_is_valid_warema_single_member`
+  directly instead of going through the thin `_is_valid_member` instance-method wrapper
+  (which has been removed).
+- `_cleanup_interval_listener` no longer checks the now-removed `_tilt_direction` field.
+
 ## [0.1.3] - 2026-06-04
 
 ### Fixed
