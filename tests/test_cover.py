@@ -1158,6 +1158,611 @@ class TestNativeGroupFanout:
 
 
 # ===========================================================================
+# Native group - stop command propagation (bug-fix coverage)
+# ===========================================================================
+
+
+class TestNativeGroupStopFanout:
+    """Test that stop commands on native groups fanout simulate('stop') to members."""
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_fanouts_simulate_stop_to_members(self):
+        """async_stop_cover must fanout simulate('stop') to all members."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+        assert "cover.member_a" in sim_calls[0][0][2]["entity_id"]
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_fanouts_simulate_stop_to_members(self):
+        """async_stop_cover_tilt must fanout simulate('stop') to all members."""
+        cover = _make_native_group_with_members()
+
+        await cover.async_stop_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_sends_hardware_stop_and_simulate_stop(self):
+        """async_stop_cover sends both the hardware button.press and the member fanout."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "closing"
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        button_calls = [c for c in calls if c[0][0] == "button" and c[0][1] == "press"]
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(button_calls) == 1
+        assert button_calls[0][0][2]["entity_id"] == "button.stop"
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_sends_hardware_stop_and_simulate_stop(self):
+        """async_stop_cover_tilt sends both the hardware button.press and the member fanout."""
+        cover = _make_native_group_with_members()
+
+        await cover.async_stop_cover_tilt()
+
+        calls = cover.hass.services.async_call.call_args_list
+        button_calls = [c for c in calls if c[0][0] == "button" and c[0][1] == "press"]
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(button_calls) == 1
+        assert button_calls[0][0][2]["entity_id"] == "button.stop"
+        assert len(sim_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_clears_group_move_direction(self):
+        """async_stop_cover must clear the group's own _move_direction."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover()
+
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_targets_all_members(self):
+        """All configured members must receive the simulate stop."""
+        members = ["cover.blind_1", "cover.blind_2", "cover.blind_3"]
+        cover = _make_native_group_with_members(members=members)
+        cover._move_direction = "closing"
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2]["entity_id"] == members
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_infers_tilt_100_while_opening(self):
+        """Group tilt must be set to 100 when stopping while opening."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+        cover._current_tilt_position = 0
+
+        await cover.async_stop_cover()
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_infers_tilt_0_while_closing(self):
+        """Group tilt must be set to 0 when stopping while closing."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "closing"
+        cover._current_tilt_position = 100
+
+        await cover.async_stop_cover()
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_does_not_fanout_when_no_members(self):
+        """async_stop_cover with no valid members must still send hardware stop but no fanout."""
+        cover = _make_native_group()
+        cover._members = []
+        cover._revalidate_group_members = MagicMock()
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs"]
+        assert len(sim_calls) == 0
+        button_calls = [c for c in calls if c[0][0] == "button"]
+        assert len(button_calls) == 1
+
+
+# ===========================================================================
+# Native group - stop command: end-to-end member state verification
+# ===========================================================================
+
+
+def _make_hass_with_service_routing(
+    member_entities: dict[str, WaremaEWFSCover],
+) -> MagicMock:
+    """Return a mock hass that routes warema_ewfs service calls to real member entities.
+
+    This lets integration-level tests verify that member entities' internal state
+    (move_direction, tilt_position, etc.) is properly updated after a native group
+    forwards a simulate command.
+    """
+    hass = _make_hass()
+
+    async def route_call(domain: str, service: str, data: dict, blocking: bool = False) -> None:
+        entity_ids = data.get("entity_id", [])
+        if isinstance(entity_ids, str):
+            entity_ids = [entity_ids]
+        for eid in entity_ids:
+            member = member_entities.get(eid)
+            if member is None:
+                continue
+            if domain == "warema_ewfs" and service == SERVICE_SIMULATE_COMMAND:
+                await member.async_simulate_command(data[ATTR_COMMAND])
+            elif domain == "warema_ewfs" and service == SERVICE_SIMULATE_SET_TILT:
+                await member.async_simulate_set_tilt_position(data["tilt_position"])
+
+    hass.services.async_call = AsyncMock(side_effect=route_call)
+    return hass
+
+
+def _make_member_cover(hass: MagicMock, entity_id: str) -> WaremaEWFSCover:
+    """Create a WaremaEWFSCover wired to the shared hass mock."""
+    member = WaremaEWFSCover(hass, _make_config())
+    member.async_write_ha_state = MagicMock()
+    member.entity_id = entity_id
+    return member
+
+
+class TestNativeGroupStopBlindspots:
+    """Tests that expose edge-cases and previously untested behaviour in native group stop handling."""
+
+    # ------------------------------------------------------------------
+    # BUG: async_stop_cover_tilt does NOT clear group's cover-move tracking
+    # _stop_tilt_tracking() -> _cleanup_interval_listener() returns early
+    # when _move_direction is set, leaving the group stuck as "opening/closing"
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_clears_group_move_direction_during_cover_move(self):
+        """async_stop_cover_tilt must also stop the group's own cover-move tracking."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+        cover._move_started_at = 0.0
+        cover._move_duration = 30.0
+
+        await cover.async_stop_cover_tilt()
+
+        assert cover._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_group_is_not_opening_in_ui_after_stop_cover_tilt(self):
+        """is_opening must be False on the group itself after async_stop_cover_tilt."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+
+        await cover.async_stop_cover_tilt()
+
+        assert cover.is_opening is False
+        assert cover.is_closing is False
+
+    @pytest.mark.asyncio
+    async def test_group_is_not_closing_in_ui_after_stop_cover_tilt(self):
+        """is_closing must be False on the group itself after async_stop_cover_tilt."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "closing"
+
+        await cover.async_stop_cover_tilt()
+
+        assert cover.is_closing is False
+        assert cover.is_opening is False
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_infers_tilt_100_while_opening(self):
+        """When stopping via stop_cover_tilt while opening, group tilt must be set to 100."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "opening"
+        cover._current_tilt_position = 0
+
+        await cover.async_stop_cover_tilt()
+
+        assert cover._current_tilt_position == 100
+        assert cover._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_infers_tilt_0_while_closing(self):
+        """When stopping via stop_cover_tilt while closing, group tilt must be set to 0."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = "closing"
+        cover._current_tilt_position = 100
+
+        await cover.async_stop_cover_tilt()
+
+        assert cover._current_tilt_position == 0
+        assert cover._known_tilt_position is True
+
+    # ------------------------------------------------------------------
+    # Stop when already idle (move_direction is None)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_when_idle_still_sends_hardware_stop(self):
+        """A stop command when not moving must still press the hardware stop button."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = None
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        button_calls = [c for c in calls if c[0][0] == "button"]
+        assert len(button_calls) == 1
+        assert button_calls[0][0][2]["entity_id"] == "button.stop"
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_when_idle_still_fanouts_simulate_stop(self):
+        """A stop command when not moving must still fanout simulate('stop') to members."""
+        cover = _make_native_group_with_members()
+        cover._move_direction = None
+
+        await cover.async_stop_cover()
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "stop"
+
+    # ------------------------------------------------------------------
+    # async_set_cover_position boundary at 50 %
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_set_cover_position_exactly_50_routes_to_open(self):
+        """Position 50 % is the open boundary - must route to open."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=50)
+
+        button_calls = [c for c in cover.hass.services.async_call.call_args_list if c[0][0] == "button"]
+        assert len(button_calls) == 1
+        assert button_calls[0][0][2]["entity_id"] == "button.open"
+
+    @pytest.mark.asyncio
+    async def test_set_cover_position_49_routes_to_close(self):
+        """Position 49 % is below the boundary - must route to close."""
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=49)
+
+        button_calls = [c for c in cover.hass.services.async_call.call_args_list if c[0][0] == "button"]
+        assert len(button_calls) == 1
+        assert button_calls[0][0][2]["entity_id"] == "button.close"
+
+    @pytest.mark.asyncio
+    async def test_set_cover_position_0_routes_to_close_with_fanout(self):
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 100
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=0)
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "close"
+
+    @pytest.mark.asyncio
+    async def test_set_cover_position_100_routes_to_open_with_fanout(self):
+        cover = _make_native_group_with_members()
+        cover._current_cover_position = 0
+        cover._known_position = True
+
+        await cover.async_set_cover_position(position=100)
+
+        calls = cover.hass.services.async_call.call_args_list
+        sim_calls = [c for c in calls if c[0][0] == "warema_ewfs" and c[0][1] == SERVICE_SIMULATE_COMMAND]
+        assert len(sim_calls) == 1
+        assert sim_calls[0][0][2][ATTR_COMMAND] == "open"
+
+    # ------------------------------------------------------------------
+    # _refresh_group_timing picks max travel times from members
+    # ------------------------------------------------------------------
+
+    def test_refresh_group_timing_uses_max_travel_time_up(self):
+        """_refresh_group_timing must use the slowest (max) travel_time_up across members."""
+        cover = _make_native_group_with_members(members=["cover.a", "cover.b"])
+        cover._revalidate_group_members = MagicMock()
+
+        state_a = MagicMock()
+        state_a.attributes = {
+            "travel_time_up": 15.0,
+            "travel_time_down": 18.0,
+            "tilt_step_time_up": 0.3,
+            "tilt_step_time_down": 0.4,
+        }
+        state_b = MagicMock()
+        state_b.attributes = {
+            "travel_time_up": 20.0,
+            "travel_time_down": 12.0,
+            "tilt_step_time_up": 0.5,
+            "tilt_step_time_down": 0.2,
+        }
+        cover.hass.states.get = lambda eid: state_a if eid == "cover.a" else state_b
+
+        cover._refresh_group_timing()
+
+        assert cover._travel_time_up == pytest.approx(20.0)  # max(15, 20)
+        assert cover._travel_time_down == pytest.approx(18.0)  # max(18, 12)
+        assert cover._tilt_step_time_up == pytest.approx(0.5)  # max(0.3, 0.5)
+        assert cover._tilt_step_time_down == pytest.approx(0.4)  # max(0.4, 0.2)
+
+    def test_refresh_group_timing_single_member_updates_all_times(self):
+        """With one member, all timing fields are updated from that member's state."""
+        cover = _make_native_group_with_members(members=["cover.only"])
+        cover._revalidate_group_members = MagicMock()
+
+        state = MagicMock()
+        state.attributes = {
+            "travel_time_up": 25.0,
+            "travel_time_down": 30.0,
+            "tilt_step_time_up": 0.6,
+            "tilt_step_time_down": 0.7,
+        }
+        cover.hass.states.get = MagicMock(return_value=state)
+
+        cover._refresh_group_timing()
+
+        assert cover._travel_time_up == pytest.approx(25.0)
+        assert cover._travel_time_down == pytest.approx(30.0)
+        assert cover._tilt_step_time_up == pytest.approx(0.6)
+        assert cover._tilt_step_time_down == pytest.approx(0.7)
+
+    def test_refresh_group_timing_ignores_member_with_no_state(self):
+        """Members without state (not yet loaded) must not reset timing to defaults."""
+        cover = _make_native_group_with_members(members=["cover.a", "cover.missing"])
+        cover._revalidate_group_members = MagicMock()
+        cover._travel_time_up = 10.0  # pre-set to a known value
+
+        state_a = MagicMock()
+        state_a.attributes = {
+            "travel_time_up": 22.0,
+            "travel_time_down": 24.0,
+            "tilt_step_time_up": 0.4,
+            "tilt_step_time_down": 0.3,
+        }
+
+        def get_state(eid):
+            return state_a if eid == "cover.a" else None
+
+        cover.hass.states.get = get_state
+
+        cover._refresh_group_timing()
+
+        # Only cover.a contributes; cover.missing is silently skipped
+        assert cover._travel_time_up == pytest.approx(22.0)
+
+    # ------------------------------------------------------------------
+    # Member already finished its tracking when group stop arrives
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_fanout_to_already_idle_member_leaves_tilt_unchanged(self):
+        """simulate('stop') on a member that is already idle must not alter its tilt."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = None  # already finished tracking
+        member._current_tilt_position = 100
+        member._known_tilt_position = True
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "opening"
+
+        await group.async_stop_cover()
+
+        # Member was idle - tilt must stay as-is
+        assert member._current_tilt_position == 100
+        assert member._move_direction is None
+
+    # ------------------------------------------------------------------
+    # async_stop_cover_tilt also clears member cover tracking (end-to-end)
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_clears_member_cover_tracking(self):
+        """async_stop_cover_tilt must fanout simulate('stop') and clear member cover tracking."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "opening"
+        member._current_tilt_position = 50
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "opening"
+
+        await group.async_stop_cover_tilt()
+
+        assert member._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_stop_cover_tilt_sets_member_tilt_to_100_while_opening(self):
+        """Member tilt must become 100 when group stop_cover_tilt is called during opening."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "opening"
+        member._current_tilt_position = 0
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "opening"
+
+        await group.async_stop_cover_tilt()
+
+        assert member._current_tilt_position == 100
+
+
+class TestNativeGroupStopMemberState:
+    """End-to-end tests: native group stop propagates correctly to member entity state."""
+
+    @pytest.mark.asyncio
+    async def test_member_move_direction_cleared_after_group_stop(self):
+        """After async_stop_cover on the group, member _move_direction must be None."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "opening"
+        member._move_started_at = 0.0
+        member._move_duration = 30.0
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        # Patch member hass so it shares the routing hass (for button presses the group sends)
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+
+        await group.async_stop_cover()
+
+        assert member._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_member_tilt_set_to_100_when_opening_after_group_stop(self):
+        """Member tilt must be set to 100 when group stops while opening."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "opening"
+        member._current_tilt_position = 33
+        member._known_tilt_position = True
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "opening"
+
+        await group.async_stop_cover()
+
+        assert member._current_tilt_position == 100
+        assert member._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_member_tilt_set_to_0_when_closing_after_group_stop(self):
+        """Member tilt must be set to 0 when group stops while closing."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "closing"
+        member._current_tilt_position = 67
+        member._known_tilt_position = True
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "closing"
+
+        await group.async_stop_cover()
+
+        assert member._current_tilt_position == 0
+        assert member._known_tilt_position is True
+
+    @pytest.mark.asyncio
+    async def test_all_members_move_direction_cleared_after_group_stop(self):
+        """Every member in the group must have _move_direction cleared after group stop."""
+        member_ids = ["cover.blind_1", "cover.blind_2"]
+        shared_hass = _make_hass()
+        members = {eid: _make_member_cover(shared_hass, eid) for eid in member_ids}
+        for m in members.values():
+            m._move_direction = "closing"
+
+        hass = _make_hass_with_service_routing(members)
+        group = _make_native_group_with_members(hass=hass, members=member_ids)
+        group._move_direction = "closing"
+
+        await group.async_stop_cover()
+
+        for eid, member in members.items():
+            assert member._move_direction is None, f"{eid} still has move_direction set"
+
+    @pytest.mark.asyncio
+    async def test_member_move_direction_cleared_after_group_stop_cover_tilt(self):
+        """async_stop_cover_tilt must also clear the member's move direction."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "closing"
+        member._move_started_at = 0.0
+        member._move_duration = 22.0
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+
+        await group.async_stop_cover_tilt()
+
+        assert member._move_direction is None
+
+    @pytest.mark.asyncio
+    async def test_member_is_not_opening_in_ui_after_group_stop(self):
+        """is_opening must return False on member entity after a group stop."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "opening"
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "opening"
+
+        await group.async_stop_cover()
+
+        assert member.is_opening is False
+        assert member.is_closing is False
+
+    @pytest.mark.asyncio
+    async def test_member_is_not_closing_in_ui_after_group_stop(self):
+        """is_closing must return False on member entity after a group stop."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._move_direction = "closing"
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._move_direction = "closing"
+
+        await group.async_stop_cover()
+
+        assert member.is_closing is False
+        assert member.is_opening is False
+
+    @pytest.mark.asyncio
+    async def test_open_then_stop_leaves_member_idle(self):
+        """Simulating an open command on a member and then stopping via the group leaves the member idle."""
+        member_id = "cover.member_a"
+        member = _make_member_cover(_make_hass(), member_id)
+        member._current_cover_position = 0
+        member._known_position = True
+
+        hass = _make_hass_with_service_routing({member_id: member})
+        group = _make_native_group_with_members(hass=hass, members=[member_id])
+        group._current_cover_position = 0
+        group._known_position = True
+
+        # Step 1: open via group → member should start tracking
+        await group.async_open_cover()
+        assert member._move_direction == "opening"
+
+        # Step 2: stop via group → member must stop tracking
+        group._move_direction = "opening"
+        await group.async_stop_cover()
+        assert member._move_direction is None
+
+
+# ===========================================================================
 # WaremaEWFSGroupCover - command_delay
 # ===========================================================================
 

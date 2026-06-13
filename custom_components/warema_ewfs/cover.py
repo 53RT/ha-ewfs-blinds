@@ -1101,6 +1101,14 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
         await self.async_set_cover_position_and_tilt(position=position, tilt_position=target_tilt)
 
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        await super().async_stop_cover(**kwargs)
+        await self._fanout_simulate("stop")
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        """For native groups the hardware stop button stops both cover and tilt movement."""
+        await self.async_stop_cover(**kwargs)
+
     async def async_force_move(self, command: str) -> None:
         """Force open/close and propagate to all group members."""
         await super().async_force_move(command)
