@@ -122,35 +122,10 @@ GROUP_SCHEMA = {
     ),
 }
 
+# Native group needs the same per-shutter settings plus the member list.
 NATIVE_GROUP_SCHEMA = {
     vol.Required(CONF_GROUP_MEMBERS): vol.All(cv.ensure_list, [cv.entity_id]),
-    vol.Required(CONF_BTN_OPEN): cv.entity_id,
-    vol.Required(CONF_BTN_CLOSE): cv.entity_id,
-    vol.Required(CONF_BTN_STOP): cv.entity_id,
-    vol.Required(CONF_BTN_TILT_UP): cv.entity_id,
-    vol.Required(CONF_BTN_TILT_DOWN): cv.entity_id,
-    vol.Optional(CONF_TRAVEL_TIME_UP, default=DEFAULT_TRAVEL_TIME_UP): vol.All(
-        vol.Coerce(float), vol.Range(min=0.1, max=600)
-    ),
-    vol.Optional(CONF_TRAVEL_TIME_DOWN, default=DEFAULT_TRAVEL_TIME_DOWN): vol.All(
-        vol.Coerce(float), vol.Range(min=0.1, max=600)
-    ),
-    vol.Optional(CONF_TILT_STEP_TIME_UP, default=DEFAULT_TILT_STEP_TIME_UP): vol.All(
-        vol.Coerce(float), vol.Range(min=0.01, max=60)
-    ),
-    vol.Optional(CONF_TILT_STEP_TIME_DOWN, default=DEFAULT_TILT_STEP_TIME_DOWN): vol.All(
-        vol.Coerce(float), vol.Range(min=0.01, max=60)
-    ),
-    vol.Optional(CONF_SEND_STOP_AFTER_MOVE, default=DEFAULT_SEND_STOP_AFTER_MOVE): cv.boolean,
-    vol.Optional(CONF_SIMULATE_STOP_DELAY, default=DEFAULT_SIMULATE_STOP_DELAY): vol.All(
-        vol.Coerce(float), vol.Range(min=0, max=60)
-    ),
-    vol.Optional(CONF_END_STOP_BUFFER, default=DEFAULT_END_STOP_BUFFER): vol.All(
-        vol.Coerce(float), vol.Range(min=0, max=60)
-    ),
-    vol.Optional(CONF_TILT_STEP_COUNT, default=DEFAULT_TILT_STEP_COUNT): vol.All(
-        vol.Coerce(int), vol.Range(min=2, max=20)
-    ),
+    **SINGLE_SHUTTER_SCHEMA,
 }
 
 
@@ -440,12 +415,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
 
     async def async_stop_cover(self, **kwargs: Any) -> None:
         self._refresh_estimates()
-        if self._move_direction == "opening":
-            self._current_tilt_position = 100
-            self._known_tilt_position = True
-        elif self._move_direction == "closing":
-            self._current_tilt_position = 0
-            self._known_tilt_position = True
+        self._set_tilt_from_direction()
         await self._send_command("stop")
         self._stop_cover_tracking()
         self.async_write_ha_state()
@@ -533,12 +503,7 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             await self._simulate_cover_move(0)
         elif command == "stop":
             self._refresh_estimates()
-            if self._move_direction == "opening":
-                self._current_tilt_position = 100
-                self._known_tilt_position = True
-            elif self._move_direction == "closing":
-                self._current_tilt_position = 0
-                self._known_tilt_position = True
+            self._set_tilt_from_direction()
             self._stop_cover_tracking()
             self._stop_tilt_tracking()
             self.async_write_ha_state()
@@ -574,16 +539,12 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         direction = "open" if target > self._current_cover_position else "close"
-        self._move_direction = "opening" if direction == "open" else "closing"
-        self._move_started_at = time.monotonic()
-        self._move_duration = duration
-        self._move_start_pos = self._current_cover_position
-        self._move_target_pos = target
-        self._move_is_simulated = True
 
-        timer_duration = self._end_stop_timer_duration(duration, target)
-        self._schedule_cover_stop(timer_duration)
-        self._ensure_interval_listener()
+        if self._direction_opposes_move(direction):
+            self._do_simulated_direction_stop()
+            return
+
+        self._begin_cover_tracking(direction, duration, self._current_cover_position, target, is_simulated=True)
         self.async_write_ha_state()
 
     async def _simulate_tilt_move(self, target: int) -> None:
@@ -595,6 +556,15 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         step_sign = 1 if target_step > start_step else -1
+        direction = "tilt_up" if step_sign > 0 else "tilt_down"
+
+        if self._direction_opposes_move(direction):
+            self._do_simulated_direction_stop()
+            return
+
+        if self._direction_matches_move(direction):
+            return
+
         next_step = start_step + step_sign
         self._current_tilt_position = tilt_step_to_percent(next_step, self._tilt_step_count)
         self._known_tilt_position = True
@@ -634,17 +604,13 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             # Force mode: full travel time in the target direction
             duration = self._travel_time_up if target >= 50 else self._travel_time_down
             direction = "open" if target >= 50 else "close"
+
+        if self._direction_opposes_move(direction):
+            await self._do_direction_stop(direction)
+            return
+
         await self._send_command(direction)
-
-        self._move_direction = "opening" if direction == "open" else "closing"
-        self._move_started_at = time.monotonic()
-        self._move_duration = duration
-        self._move_start_pos = self._current_cover_position
-        self._move_target_pos = target
-
-        timer_duration = self._end_stop_timer_duration(duration, target)
-        self._schedule_cover_stop(timer_duration)
-        self._ensure_interval_listener()
+        self._begin_cover_tracking(direction, duration, self._current_cover_position, target)
         self.async_write_ha_state()
 
     async def _start_tilt_move(self, target: int) -> None:
@@ -655,9 +621,17 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             return
 
         direction = "tilt_up" if target_step > start_step else "tilt_down"
+        step_sign = 1 if target_step > start_step else -1
+
+        if self._direction_opposes_move(direction):
+            await self._do_direction_stop(direction)
+            return
+
+        if self._direction_matches_move(direction):
+            return
+
         step_delay = self._tilt_step_time_up if direction == "tilt_up" else self._tilt_step_time_down
         step_delta = abs(target_step - start_step)
-        step_sign = 1 if target_step > start_step else -1
 
         for index in range(step_delta):
             await self._send_command(direction)
@@ -675,6 +649,74 @@ class WaremaEWFSCover(CoverEntity, RestoreEntity):
             {"entity_id": self._commands[command]},
             blocking=True,
         )
+
+    # ------------------------------------------------------------------
+    # Direction / movement helpers
+    # ------------------------------------------------------------------
+
+    def _set_tilt_from_direction(self) -> None:
+        """Set tilt to the expected end position if the cover is currently moving."""
+        if self._move_direction is None:
+            return
+        self._current_tilt_position = 100 if self._move_direction == "opening" else 0
+        self._known_tilt_position = True
+
+    def _direction_opposes_move(self, direction: str) -> bool:
+        """Return True when the given command direction would stop the motor.
+
+        Moving in the opposite direction (or the opposing tilt axis while cover is moving)
+        causes the motor to return to neutral instead of reversing immediately.
+        """
+        return (self._move_direction == "opening" and direction in ("close", "tilt_down")) or (
+            self._move_direction == "closing" and direction in ("open", "tilt_up")
+        )
+
+    def _direction_matches_move(self, direction: str) -> bool:
+        """Return True when a tilt direction is a no-op during the current cover move.
+
+        A tilt command in the same direction as an ongoing cover move has no hardware
+        effect because the slats are already being driven to their end position.
+        """
+        return (self._move_direction == "opening" and direction == "tilt_up") or (
+            self._move_direction == "closing" and direction == "tilt_down"
+        )
+
+    async def _do_direction_stop(self, command: str) -> None:
+        """Send a command that opposes the current movement (hardware interprets as stop)."""
+        await self._send_command(command)
+        self._set_tilt_from_direction()
+        self._stop_cover_tracking()
+        self.async_write_ha_state()
+
+    def _do_simulated_direction_stop(self) -> None:
+        """Update tracking state as if the motor was stopped by an opposing direction."""
+        self._set_tilt_from_direction()
+        self._stop_cover_tracking()
+        self.async_write_ha_state()
+
+    def _begin_cover_tracking(
+        self,
+        direction: str,
+        duration: float,
+        start_pos: int,
+        target_pos: int,
+        *,
+        is_simulated: bool = False,
+    ) -> None:
+        """Initialise tracking fields and start the stop timer and interval listener."""
+        self._move_direction = "opening" if direction == "open" else "closing"
+        self._move_started_at = time.monotonic()
+        self._move_duration = duration
+        self._move_start_pos = start_pos
+        self._move_target_pos = target_pos
+        self._move_is_simulated = is_simulated
+        timer_duration = self._end_stop_timer_duration(duration, target_pos)
+        self._schedule_cover_stop(timer_duration)
+        self._ensure_interval_listener()
+
+    # ------------------------------------------------------------------
+    # Timer management
+    # ------------------------------------------------------------------
 
     def _schedule_cover_stop(self, duration: float) -> None:
         if self._unsub_move_timer:
@@ -1054,13 +1096,15 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_closing = self._move_direction == "closing"
         await super().async_open_cover(**kwargs)
-        await self._fanout_simulate("open")
+        await self._dispatch_after_cover_command(was_closing, "open")
 
     async def async_close_cover(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_opening = self._move_direction == "opening"
         await super().async_close_cover(**kwargs)
-        await self._fanout_simulate("close")
+        await self._dispatch_after_cover_command(was_opening, "close")
 
     async def async_set_cover_position(self, **kwargs: Any) -> None:
         requested = clamp_percent(float(kwargs[ATTR_POSITION]))
@@ -1079,18 +1123,21 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
 
     async def async_open_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_moving = self._move_direction is not None
         await super().async_open_cover_tilt(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        await self._dispatch_after_tilt(was_moving)
 
     async def async_close_cover_tilt(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_moving = self._move_direction is not None
         await super().async_close_cover_tilt(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        await self._dispatch_after_tilt(was_moving)
 
     async def async_set_cover_tilt_position(self, **kwargs: Any) -> None:
         self._refresh_group_timing()
+        was_moving = self._move_direction is not None
         await super().async_set_cover_tilt_position(**kwargs)
-        await self._fanout_tilt(self._current_tilt_position)
+        await self._dispatch_after_tilt(was_moving)
 
     async def async_set_cover_position_and_tilt(self, position: float, tilt_position: float) -> None:
         target_position = clamp_percent(position)
@@ -1101,10 +1148,48 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
         target_tilt = tilt_step_to_percent(tilt_step, TILT_STEP_COUNT)
         await self.async_set_cover_position_and_tilt(position=position, tilt_position=target_tilt)
 
+    async def async_stop_cover(self, **kwargs: Any) -> None:
+        await super().async_stop_cover(**kwargs)
+        await self._fanout_simulate("stop")
+
+    async def async_stop_cover_tilt(self, **kwargs: Any) -> None:
+        """For native groups the hardware stop button stops both cover and tilt movement."""
+        await self.async_stop_cover(**kwargs)
+
     async def async_force_move(self, command: str) -> None:
         """Force open/close and propagate to all group members."""
         await super().async_force_move(command)
         await self._fanout_simulate(command)
+
+    # ------------------------------------------------------------------
+    # Native group fanout helpers
+    # ------------------------------------------------------------------
+
+    async def _dispatch_after_cover_command(self, was_opposite: bool, command: str) -> None:
+        """Fanout the right simulate command after an open or close cover action.
+
+        When the command opposed the current direction the hardware stopped the motor,
+        so members receive simulate('stop').  Otherwise they receive simulate(command).
+        """
+        if was_opposite and self._move_direction is None:
+            await self._fanout_simulate("stop")
+        else:
+            await self._fanout_simulate(command)
+
+    async def _dispatch_after_tilt(self, was_moving: bool) -> None:
+        """Fanout the right signal after a tilt action on the native group.
+
+        - Opposite-direction tilt stopped the cover move → simulate('stop') to members.
+        - Same-direction tilt was a hardware no-op → no fanout.
+        - Normal tilt while idle → propagate the new tilt position.
+        """
+        if was_moving and self._move_direction is None:
+            # Opposite-direction tilt stopped the cover move
+            await self._fanout_simulate("stop")
+        elif not (was_moving and self._move_direction is not None):
+            # Normal tilt (not a same-direction no-op)
+            await self._fanout_tilt(self._current_tilt_position)
+        # else: same-direction no-op while moving → nothing to fanout
 
     async def _fanout_simulate(self, command: str) -> None:
         """Send simulate_command to all valid member entities."""
@@ -1143,17 +1228,13 @@ class WaremaEWFSNativeGroupCover(WaremaEWFSCover):
             direction = "open" if target >= 50 else "close"
         duration = self._travel_time_up if direction == "open" else self._travel_time_down
 
+        if self._direction_opposes_move(direction):
+            await self._do_direction_stop(direction)
+            return
+
         await self._send_command(direction)
-
-        self._move_direction = "opening" if direction == "open" else "closing"
-        self._move_started_at = time.monotonic()
-        self._move_duration = duration
-        self._move_start_pos = self._current_cover_position
-        self._move_target_pos = 100 if direction == "open" else 0
-
-        timer_duration = self._end_stop_timer_duration(duration, self._move_target_pos)
-        self._schedule_cover_stop(timer_duration)
-        self._ensure_interval_listener()
+        target_pos = 100 if direction == "open" else 0
+        self._begin_cover_tracking(direction, duration, self._current_cover_position, target_pos)
         self.async_write_ha_state()
 
     def _refresh_group_timing(self, log_warning: bool = False) -> None:
